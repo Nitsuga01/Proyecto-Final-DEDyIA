@@ -1,2 +1,5 @@
 [deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CubicSplines = "9c784101-8907-5a6d-9be6-98f00873c89b"
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+StochasticDiffEq = "789caeaf-c7a9-5a7d-9973-96adeb23e2a0"
