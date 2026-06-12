@@ -82,19 +82,19 @@ function sde_diffusion!(du,u,p,t)
     ax = sqrt(2 * Λx * ηx)
     ay = sqrt(2 * Λy * ηy)
 
-#    du[1,1] = ax * C_xx(t)
-#    du[2,1] = ax * C_xy(t)
-#    du[3,1] = ax * C_xpx(t)
-#    du[4,1] = ax * C_xpy(t)
-#    du[1,2] = ay * C_xy(t)
-#    du[2,2] = ay * C_yy(t)
-#    du[3,2] = ay * C_ypx(t)
-#    du[4,2] = ay * C_ypy(t)
+    du[1,1] = ax * C_xx(t)
+    du[2,1] = ax * C_xy(t)
+    du[3,1] = ax * C_xpx(t)
+    du[4,1] = ax * C_xpy(t)
+    du[1,2] = ay * C_xy(t)
+    du[2,2] = ay * C_yy(t)
+    du[3,2] = ay * C_ypx(t)
+    du[4,2] = ay * C_ypy(t)
 
-    du[1] = ax * C_xx(t)
-    du[2] = ax * C_xy(t)
-    du[3] = ax * C_xpx(t)
-    du[4] = ax * C_xpy(t)
+#    du[1] = ax * C_xx(t)
+#    du[2] = ax * C_xy(t)
+#    du[3] = ax * C_xpx(t)
+#    du[4] = ax * C_xpy(t)
 end
 
 function ode_drift!(du,u,p,t)
@@ -152,11 +152,11 @@ end
 
 initial_state_ode = thermal_values(n₀)
 
-tspan = (0.0,500.0)
+tspan = (0.0,200.0)
 prob_ode = ODEProblem(ode_drift!, initial_state_ode, tspan)
-sol_ode = solve(prob_ode, abstol=1e-10, reltol=1e-6)
+sol_ode = solve(prob_ode, abstol=1e-14, reltol=1e-6)
 
-fig1=Figure(figsize=(20,6))
+fig1=Figure(figsize=(2000,800),fontsize=6)
 T=tspan[1]:0.1:tspan[2]
 ax11 = Axis(fig1[1,1], xlabel = "t (us)", ylabel = "C_xx (nm^2)")
 ax12 = Axis(fig1[1,2], xlabel = "t (us)", ylabel = "C_xy (nm^2)")
@@ -180,16 +180,30 @@ lines!(ax15, T, sol_ode(T)[9,:], label = "C_pxpy")
 lines!(ax16, T, sol_ode(T)[10,:], label = "C_pypy")
 fig1
 
+fig3=Figure()
+ax31 = Axis(fig3[1,1], xlabel = "t (us)", ylabel = "C_xy (nm^2)")
+lines!(ax31, T, sol_ode(T)[2,:])
+fig3
+
+fig4=Figure()
+ax41 = Axis(fig4[1,1], xlabel = "C_yy (nm^2)", ylabel = "C_xx (nm^2)")
+lines!(ax41, sol_ode(T)[1,:], sol_ode(T)[3,:])
+fig4
+
+fig5=Figure()
+ax51 = Axis(fig5[1,1], xlabel = "C_pxpx ((ev us / nm)^2)", ylabel = "C_pypy ((ev us / nm)^2)")
+lines!(ax51, sol_ode(T)[8,:], sol_ode(T)[10,:])
+fig5
+
 s=[t -> sol_ode(t)[i] for i in eachindex(initial_state_ode[1:7])]
-#s=[t -> 0.0 for i in eachindex(initial_state_ode[1:7])]
+s=[t -> 0.0 for i in eachindex(initial_state_ode[1:7])]
 p = (x->0.0, x->0.0, s...)
 
-tspan = (0.0,500.0)
+tspan = (0.0,200.0)
 initial_state_sde = sqrt.(initial_state_ode[[1,3,8,10]])
 func_sde = SDEFunction(sde_drift!, sde_diffusion!)
 prob_sde = SDEProblem(func_sde, initial_state_sde, tspan, p, noise_rate_prototype = zeros(4, 2))
-prob_sde = SDEProblem(func_sde, initial_state_sde, tspan, p, noise_rate_prototype = zeros(4))
-sol_sde = solve(prob_sde, SKenCarp(), reltol=1e-6, abstol=1e-8)
+sol_sde = solve(prob_sde, reltol=1e-8, abstol=1e-11)
 
 fig2=Figure()
 ax21 = Axis(fig2[1,1], xlabel = "t (us)", ylabel = "Pos (nm)")
