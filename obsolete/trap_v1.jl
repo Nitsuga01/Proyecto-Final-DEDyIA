@@ -1,6 +1,12 @@
+"""
+En este archivo se van a encontrar las funciones necesarias para simular una partícula atrapada en una trampa óptica
+bajo medicion continua.
+"""
+
 import DifferentialEquations: ODEProblem, solve
-import StochasticDiffEq: SDEFunction, SDEProblem, SOSRA, SKenCarp, solve
-using CairoMakie
+import StochasticDiffEq: SDEFunction, SDEProblem, solve
+
+## Constantes de la trampa, la partícula y la naturaleza obtenidos del paper
 
 # voy a trabajar en ev, nm, us
 
@@ -45,9 +51,11 @@ const dlim = w₀ / sqrt(1 + 2 * sqrt(I_L / I_G)) # limit of the harmonic approx
 const Ω₀ = sqrt(2 * V_0 / w₀^2 / m) * sqrt(4 * sqrt(I_G * I_L) + 2 * I_G)
 const Ω = 5*Ω₀ # rotational frequency of trap (and thus the trap) in rad/us
 
-# OBS, estoy usando el del paper de la trampa óptica en detalle. El que dan en el principal está mal pq falta dividir por w_o ^ 2.
-# esa falta de división hace que las unidades no den, y además da un potencial efectivo mucho más chiquito.
-# también se comen un 2 multiplicando.
+## Funciones necesarias para las ecuaciones dinámicas del problema
+
+# OBS, estoy usando la fórmula que dan en el paper de la trampa óptica en detalle. 
+# La que dan en el principal está mal pq falta dividir por w_o ^ 2 por un tema de unidades.
+# También parecen olvidarse de un 2 multiplicando.
 function potential(t,x,y)
     km = I_G - 2 * sqrt(I_L * I_G) * cos(2 * Ω * t)
     kp = I_G + 2 * sqrt(I_L * I_G) * cos(2 * Ω * t)
@@ -56,6 +64,7 @@ function potential(t,x,y)
     return c * (km * x^2 + kp * y^2 - kxy * x * y)
 end
 
+# Esta es la fuerza correspondiente al potencial de la trampa
 function force(t,x,y)
     km = I_G - 2 * sqrt(I_L*I_G) * cos(2 * Ω * t)
     kp = I_G + 2 * sqrt(I_L*I_G) * cos(2 * Ω * t)
@@ -64,24 +73,35 @@ function force(t,x,y)
     return c * ( -2 * km * x + kxy * y), c * ( -2 * kp * y + kxy * x)
 end
 
+# Estas dan las derivadas de los valores medios de la posición y momento en la trampa 
 function sde_drift!(du,u,p,t)
+    # valor medio de posición y momento en la trampa
     x, y, px, py = u
+
+    # fuerza de feedback y segundos momentos de posición y momento en la trampa´.
     ux, uy, C_xx, C_yy, C_xy, C_xpx, C_xpy, C_ypx, C_ypy = p
 
+    # fuerza generada por el potencial de la trampa
     fx, fy = force(t,x,y) # obs que como la fuerza es lineal, la puedo evaluar directo en los vals medios.
 
+    # derivadas de los valores medios de posición y momento en la trampa
     du[1] = px/m
     du[2] = py/m
-    du[3] = fx-ux(t)
-    du[4] = fy-uy(t)
+    du[3] = fx+ux
+    du[4] = fy+uy
 end
 
+# Estas dan los kicks estocásticos para los valores medios de la posición y momento en la trampa. Resulta ser ruido aditivo
+# que depende de los valores de los segundos momentos a cada tiempo.
 function sde_diffusion!(du,u,p,t)
+    # fuerza de backaction y segundos momentos de posición y momento en la trampa
     ux, uy, C_xx, C_xy, C_yy, C_xpx, C_xpy, C_ypx, C_ypy = p
 
+    # constantes que gobiernan la magnitud del ruido
     ax = sqrt(2 * Λx * ηx)
     ay = sqrt(2 * Λy * ηy)
 
+    # coeficientes que gobiernan la magnitud del ruido sobre los valores medios de posición y momento en la trampa
     du[1,1] = ax * C_xx(t)
     du[2,1] = ax * C_xy(t)
     du[3,1] = ax * C_xpx(t)
@@ -90,26 +110,24 @@ function sde_diffusion!(du,u,p,t)
     du[2,2] = ay * C_yy(t)
     du[3,2] = ay * C_ypx(t)
     du[4,2] = ay * C_ypy(t)
-
-#    du[1] = ax * C_xx(t)
-#    du[2] = ax * C_xy(t)
-#    du[3] = ax * C_xpx(t)
-#    du[4] = ax * C_xpy(t)
 end
 
+# Estas dan las derivadas de los segundos momentos de la posición y momento en la trampa.
 function ode_drift!(du,u,p,t)
+    # segundos momentos de posición y momento en la trampa
     C_xx, C_xy, C_yy, C_xpx, C_xpy, C_ypx, C_ypy, C_pxpx, C_pxpy, C_pypy = u
 
+    # cantidades que gobiernan la magnitud del ruido, backaction, decorrelación, la fuerza en la trampa
     ax = 2 * Λx * ηx
     ay = 2 * Λy * ηy
     bx = 2 * Λx * ħ^2
     by = 2 * Λy * ħ^2
     c = 2 * V_0 / w₀^2
 
+    # fuerza
     km = I_G - 2 * sqrt(I_L * I_G) * cos(2 * Ω * t)
     kp = I_G + 2 * sqrt(I_L * I_G) * cos(2 * Ω * t)
     kxy = 4 * sqrt(I_L * I_G) * sin(2 * Ω * t)
-
     C_dxVx = c * (2 * km * C_xx - kxy * C_xy)
     C_dxVy = c * (2 * km * C_xy - kxy * C_yy)
     C_dyVx = c * (2 * kp * C_xy - kxy * C_xx)
@@ -119,6 +137,7 @@ function ode_drift!(du,u,p,t)
     C_dyVpx = c * (2 * kp * C_ypx - kxy * C_xpx)
     C_dyVpy = c * (2 * kp * C_ypy - kxy * C_xpy)
 
+    # Deruvadas de los segundos momentos en la trampa, separadas según su contribución.
     # du :  L_Liouville          + L_Recoil +  L_Diffusion
     du[1] = 2/m * C_xpx                      - ax * C_xx^2 - ay * C_xy^2                # d/dt C_xx
     du[2] = 1/m * (C_xpy + C_ypx)            - ax * C_xx * C_xy - ay * C_yy * C_xy      # d/dt C_xy
@@ -133,7 +152,45 @@ function ode_drift!(du,u,p,t)
     
 end
 
-function thermal_values(n) #TODO chequear
+## Funciones pre-procesadas para hacer simulaciones del sistema, teniendo como default parámetros que encontré que funcionaban bien para las simulaciones
+
+"""
+    trap_sim(ode_xo, sde_xo, tspan, feedback=(0.0,0.0), ode_abstol=1e-14, ode_reltol=1e-6, sde_abstol=1e-11, sde_reltol=1e-8)
+
+Función que realiza una simulación de la dinámica de la trampa en el intervalo de tiempo 'tspan'.
+El sistema parte del estado inicial 'sde_xo' para los primeros momentos: [xo,yo,pxo,pyo],
+donde estos son los valores medios de la posición y el momento en las dos dimensiones simuladas.
+El sistema parte del estado inicial 'ode_xo' para los segundos momentos: [C_xx,C_xy,C_yy,C_xpx,C_xpy,C_ypx,C_ypy,C_pxpx,C_pxpy,C_pypy]
+donde C_ij es <(i-<i>)(j-<j>)>, remplazando en i y j las componentes de la posición o momento de la partícula en la trampa.
+
+El par de funciones 'feedback' da la posibilidad de simular una respuesta agregada al sistema.
+
+Los parámetros restantes controlan la tolerancia absoluta y relativa de los solvers numéricos de la ode (para los segundos momentos)
+o de la SDE (para los primeros momentos), y tienen como parámetros por default algunos que encontré que funcionaban bien a mano
+para el caso que estoy simulando.
+
+La función devuelve las soluciones de ambos sistemas, primero los primeros momentos en 'sol_sde', y luego los segundos en 'sol_ode'.
+"""
+function trap_sim(sde_xo, ode_xo, tspan, feedback=(0.0,0.0), ode_abstol=1e-14, ode_reltol=1e-6, sde_abstol=1e-11, sde_reltol=1e-8)
+    
+    # Primero simulo la ODE 
+    prob_ode = ODEProblem(ode_drift!, ode_xo, tspan)
+    sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol)
+    
+    # Luego, basado en los resultados de la ode, preparo los parámetros de la SDE
+    s=[t -> sol_ode(t)[i] for i in eachindex(ode_xo[1:7])]
+    p = (feedback..., s...)
+
+    # Luego simulo la SDE
+    func_sde = SDEFunction(sde_drift!, sde_diffusion!)
+    prob_sde = SDEProblem(func_sde, sde_xo, tspan, p, noise_rate_prototype = zeros(4, 2))
+    sol_sde = solve(prob_sde, reltol=sde_abstol, abstol=sde_reltol)
+
+    return sol_sde, sol_ode
+end
+
+# parámetros iniciales térmicos para el sistema
+function thermal_values(n)
     x = 0
     p = 0
     C_xx = x_zpf^2 * (2 * n + 1) # variance of position in x for thermal state with mean occupation n
@@ -148,72 +205,3 @@ function thermal_values(n) #TODO chequear
     C_pypy = ħ^2 / (4 * y_zpf^2) * (2 * n + 1) # variance of position in py for thermal state with mean occupation n
     return [C_xx, C_xy, C_yy, C_xpx, C_xpy, C_ypx, C_ypy, C_pxpx, C_pxpy, C_pypy]
 end
-
-
-initial_state_ode = thermal_values(n₀)
-
-tspan = (0.0,200.0)
-prob_ode = ODEProblem(ode_drift!, initial_state_ode, tspan)
-sol_ode = solve(prob_ode, abstol=1e-14, reltol=1e-6)
-
-fig1=Figure(figsize=(2000,800),fontsize=6)
-T=tspan[1]:0.1:tspan[2]
-ax11 = Axis(fig1[1,1], xlabel = "t (us)", ylabel = "C_xx (nm^2)")
-ax12 = Axis(fig1[1,2], xlabel = "t (us)", ylabel = "C_xy (nm^2)")
-ax13 = Axis(fig1[1,3], xlabel = "t (us)", ylabel = "C_yy (nm^2)")
-ax14 = Axis(fig1[2,1], xlabel = "t (us)", ylabel = "C_pxpx ((ev us / nm)^2)")
-ax15 = Axis(fig1[2,2], xlabel = "t (us)", ylabel = "C_pxpy ((ev us / nm)^2)")
-ax16 = Axis(fig1[2,3], xlabel = "t (us)", ylabel = "C_pypy ((ev us / nm)^2)")
-ax17 = Axis(fig1[1,4], xlabel = "t (us)", ylabel = "C_xpx (ev us)")
-ax18 = Axis(fig1[1,5], xlabel = "t (us)", ylabel = "C_xpy (ev us)")
-ax19 = Axis(fig1[2,4], xlabel = "t (us)", ylabel = "C_ypx (ev us)")
-ax110 = Axis(fig1[2,5], xlabel = "t (us)", ylabel = "C_ypy (ev us)")
-lines!(ax11, T, sol_ode(T)[1,:], label = "C_xx")
-lines!(ax12, T, sol_ode(T)[2,:], label = "C_xy")
-lines!(ax13, T, sol_ode(T)[3,:], label = "C_yy")
-lines!(ax17, T, sol_ode(T)[4,:], label = "C_xpx")
-lines!(ax18, T, sol_ode(T)[5,:], label = "C_xpy")
-lines!(ax19, T, sol_ode(T)[6,:], label = "C_ypx")
-lines!(ax110, T, sol_ode(T)[7,:], label = "C_ypy")
-lines!(ax14, T, sol_ode(T)[8,:], label = "C_pxpx")
-lines!(ax15, T, sol_ode(T)[9,:], label = "C_pxpy")
-lines!(ax16, T, sol_ode(T)[10,:], label = "C_pypy")
-fig1
-
-fig3=Figure()
-ax31 = Axis(fig3[1,1], xlabel = "t (us)", ylabel = "C_xy (nm^2)")
-lines!(ax31, T, sol_ode(T)[2,:])
-fig3
-
-fig4=Figure()
-ax41 = Axis(fig4[1,1], xlabel = "C_yy (nm^2)", ylabel = "C_xx (nm^2)")
-lines!(ax41, sol_ode(T)[1,:], sol_ode(T)[3,:])
-fig4
-
-fig5=Figure()
-ax51 = Axis(fig5[1,1], xlabel = "C_pxpx ((ev us / nm)^2)", ylabel = "C_pypy ((ev us / nm)^2)")
-lines!(ax51, sol_ode(T)[8,:], sol_ode(T)[10,:])
-fig5
-
-s=[t -> sol_ode(t)[i] for i in eachindex(initial_state_ode[1:7])]
-s=[t -> 0.0 for i in eachindex(initial_state_ode[1:7])]
-p = (x->0.0, x->0.0, s...)
-
-tspan = (0.0,200.0)
-initial_state_sde = sqrt.(initial_state_ode[[1,3,8,10]])
-func_sde = SDEFunction(sde_drift!, sde_diffusion!)
-prob_sde = SDEProblem(func_sde, initial_state_sde, tspan, p, noise_rate_prototype = zeros(4, 2))
-sol_sde = solve(prob_sde, reltol=1e-8, abstol=1e-11)
-
-fig2=Figure()
-ax21 = Axis(fig2[1,1], xlabel = "t (us)", ylabel = "Pos (nm)")
-lines!(ax21, sol_sde.t, sol_sde[1,:], label = "x")
-lines!(ax21, sol_sde.t, sol_sde[2,:], label = "y")
-ax22 = Axis(fig2[1,2], xlabel = "x (nm)", ylabel = "y (nm)")
-lines!(ax22, sol_sde[1,:], sol_sde[2,:])
-ax23 = Axis(fig2[2,1], xlabel = "t (us)", ylabel = "Momento (ev us / nm)")
-lines!(ax23, sol_sde.t, sol_sde[3,:], label = "x")
-lines!(ax23, sol_sde.t, sol_sde[4,:], label = "y")
-ax24 = Axis(fig2[2,2], xlabel = "px (ev us / nm)", ylabel = "py (ev us / nm)")
-lines!(ax24, sol_sde[3,:], sol_sde[4,:])
-fig2
