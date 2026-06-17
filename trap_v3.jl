@@ -31,7 +31,7 @@ function sde_drift!(du,u,p,t)
     x, y, px, py, qx, qy = u
 
     # fuerza de feedback y segundos momentos de posición y momento en la trampa´.
-    ux, uy, vx, vy, errx, erry = p
+    ux, uy, vx, vy, errx, erry, σ = p
 
     # fuerza generada por el potencial de la trampa
     fx, fy = force(t,x,y) # obs que como la fuerza es lineal, la puedo evaluar directo en los vals medios.
@@ -49,7 +49,7 @@ end
 # que depende de los valores de los segundos momentos a cada tiempo.
 function sde_diffusion!(du, feedback_params, second_moments)
     # fuerza de backaction, medición y segundos momentos de posición y momento en la trampa
-    ux, uy, vx, vy, errx, erry = feedback_params
+    ux, uy, vx, vy, errx, erry, σ = feedback_params
     C_xx, C_xy, C_yy, C_xpx, C_xpy, C_ypx, C_ypy = second_moments
 
     # constantes que gobiernan la magnitud del ruido
@@ -65,8 +65,8 @@ function sde_diffusion!(du, feedback_params, second_moments)
     du[2,2] = ay * C_yy
     du[3,2] = ay * C_ypx
     du[4,2] = ay * C_ypy
-    du[5,3] = vx*errx
-    du[6,3] = vy*erry
+    du[5,3] = errx
+    du[6,3] = erry
 end
 
 # Estas dan las derivadas de los segundos momentos de la posición y momento en la trampa.

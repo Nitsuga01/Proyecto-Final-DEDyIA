@@ -31,6 +31,26 @@ function sde_drift_jacobian(u,input,p,i,t0,Δt)
     return J
 end
 
+function sde_drift(u,input,p,i,t0,Δt)
+    # tiempo
+    t = t0+i*Δt
+
+    # valores del estado
+    x, y, px, py, qx, qy = u
+
+    # parametros de feedback de la trampa
+    ux, uy, vx, vy, errx, erry, σ = p
+
+    # parametros de fuerza en trampa
+    km = I_G - 2 * sqrt(I_L*I_G) * cos(2 * Ω * t)
+    kp = I_G + 2 * sqrt(I_L*I_G) * cos(2 * Ω * t)
+    kxy = 4 * sqrt(I_L*I_G)*sin(2 * Ω * t)
+    c = 2 * V_0 / w₀^2
+
+    # Jacobiano de la trampa, es todo lineal, así que ganamos.
+    return SA[px/m,py/m,c*(-2*km*x+kxy*y)+ux*qx,c*(-2*kp*y+kxy*x)+uy*qy,vx*(px-qx),vy*(py-qy)]
+end
+
 function sde_noise_matrix(u,input,p,t,second_moments)
     # fuerza de backaction, medición y segundos momentos de posición y momento en la trampa
     ux, uy, vx, vy, errx, erry, σ = p
@@ -41,28 +61,32 @@ function sde_noise_matrix(u,input,p,t,second_moments)
     ax = sqrt(2 * Λx * ηx)
     ay = sqrt(2 * Λy * ηy)
 
-    G=[ax * C_xx  ay * C_xy  0      ;
-       ax * C_xy  ay * C_yy  0      ;
-       ax * C_xpx ay * C_ypx 0      ;
-       ax * C_xpy ay * C_ypy 0      ;
-       0          0          vx*errx;
-       0          0          vy*erry]
+    G=SA[ax * C_xx  ay * C_xy  0      ;
+         ax * C_xy  ay * C_yy  0      ;
+         ax * C_xpx ay * C_ypx 0      ;
+         ax * C_xpy ay * C_ypy 0      ;
+         0          0          vx*errx;
+         0          0          vy*erry]
     
     Q = 1/2 .* G*G'
     
 end
 
-function trap_kalman_filter(d0,to,tf,Δt,feedback_params;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6)
+function trap_kalman_filter(d0,to,tf,Δt,feedback_params;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
     prob_ode = ODEProblem(ode_drift!, ode_xo, (to,tf))
     sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf)
     
+    # Matriz que da ruido de proceso al estado
     R1 = (u,input,p,i) -> sde_noise_matrix(u,input,p,i,sol_ode[i+1]).*Δt
-    R2 = (u,input,p,i) -> I(2)*p[7]^2
+    # Matriz de covarianza para el ruido de medición sobre el estado
+    R2 = SA[feedback_params[7]^2 0.0; 0.0 feedback_params[7]^2]
 
-    A = (u,input,p,i)->I(6).+sde_drift_jacobian(u,input,p,i,to,Δt).*Δt
-    C = (u,input,p,i)->[1 0 0 0 0 0; 0 1 0 0 0 0]
+    # Evolución
+    continuous_dynamics = (u,input,p,i)->sde_drift(u,input,p,i,to,Δt)
+    discrete_dynamics = Rk4(continuous_dynamics,Δt;supersample=supersample)
+    measurement = (u,input,p,i)->SA[u[1],u[2]]
 
-    kf=KalmanFilter(A, zeros(6,0), C, zeros(2,0), R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
+    kf=ExtendedKalmanFilter(discrete_dynamics,  measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
 end
 
 ## Inference
@@ -73,8 +97,17 @@ function loglik_dataset(dataset,filter)
     u=fill([],length(dataset[1]))
 
     for i in 1:N
-        sol = forward_trajectory(filter, u, dataset[i])
-        ll_vec[i] = sol.ll
+        try
+            sol = forward_trajectory(filter, u, dataset[i])
+            ll_vec[i] = sol.ll
+        catch e
+            if e isa ErrorException && e.msg[1:49] == "Cholesky factorization of α*R̃*α' failed at time "
+                # Si no puede ajustar la trayectoria (lo que suele resultar en este error), voy a asignar una loss infinita.
+                ll_vec[i] = -Inf
+            else
+                rethrow(e)
+            end 
+        end
     end
 
     return ll_vec

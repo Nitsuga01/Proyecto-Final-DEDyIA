@@ -16,17 +16,18 @@ El sistema se simula y se retornan datos observacionales (agregando error de med
 - nsteps es el número de pasos del solver numérico entre cada punto de tpoints.
 - ode_abstol y ode_reltol controlan la precisión de los solvers de DifferentialEquations
 """
-@gen function SDEObs(tpoints, feedback_params=(0.0,0.0,0.0,0.0,0.0,0.0), σ=0.0, kwargs=(;))
+@gen function SDEObs(tpoints, feedback_params=(0.0,0.0,0.0,0.0,0.0,0.0,0.0), kwargs=(;))
     kwarg_keys=[:sde_xo, :ode_xo, :nssteps, :ode_abstol, :ode_reltol]
     kwarg_vals = Dict()
     for k in kwarg_keys
         if k in keys(kwargs)
             kwarg_vals[k]=kwargs[k]
         else
-            kwarg_vals[k]=default_kwarg_value(k,(;σ=σ))
+            kwarg_vals[k]=default_kwarg_value(k,feedback_params)
         end
     end
     sde_xo, ode_xo, nssteps, ode_abstol, ode_reltol = getindex.(Ref(kwarg_vals),kwarg_keys)
+    σ = feedback_params[7]
 
     state_vec=Matrix{Float64}(undef, length(tpoints), 6)
     obs_vec=Matrix{Float64}(undef, length(tpoints), 2)
@@ -73,11 +74,16 @@ El sistema se simula y se retornan datos observacionales (agregando error de med
     return state_vec, obs_vec
 end
 
-@gen function default_kwarg_value(k::Symbol,params=(;))
+@gen function default_kwarg_value(k::Symbol,params)
     if k == :sde_xo
-        σ = params[:σ]
+        ux,uy,vx,vy,errx,erry,σ = params
         s = thermal_values(n₀)
-        sde_xo = {:sde_xo} ~ mvnormal(zeros(6), diagm(s[[1,3,8,10,8,10]]))
+        covmat = diagm(s[[1,3,8,10,8,10]])
+        covmat[3,5] = covmat[5,3] = covmat[3,3]
+        covmat[4,6] = covmat[6,4] = covmat[4,4]
+        covmat[6,6] += errx^2/2/vx
+        covmat[5,5] += erry^2/2/vy
+        sde_xo = {:sde_xo} ~ mvnormal(zeros(6), covmat)
         return sde_xo
     end
     if k == :ode_xo

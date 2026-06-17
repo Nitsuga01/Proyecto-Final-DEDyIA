@@ -4,16 +4,18 @@ y cualquier otra cosa sobre la trampa.
 """
 ## Imports y Usings
 
-import LinearAlgebra: LinearAlgebra, diagm, I, mul!, tr
-import Distributions: Distributions, Dirichlet, MvNormal
-import DifferentialEquations: DifferentialEquations, init, ODEProblem, solve
-import Gen: Gen, choicemap, @gen, get_retval, log_ml_estimate, mvnormal, NoChange, sample_unweighted_traces, select, simulate
-import GenParticleFilters: GenParticleFilters, effective_sample_size, pf_initialize, pf_rejuvenate!, pf_resample!, pf_update!
-import LowLevelParticleFilters: LowLevelParticleFilters, covariance, forward_trajectory, KalmanFilter, predict!, simulate
-import Optimization: Optimization, AutoForwardDiff, OptimizationFunction, OptimizationProblem, solve
+import DifferentialEquations: init, MatrixOperator, ODEProblem, solve
+import Distributions: Dirichlet, MvNormal
+import Gen: choicemap, @gen, get_retval, log_ml_estimate, mvnormal, NoChange, sample_unweighted_traces, select, simulate
+import GenParticleFilters: effective_sample_size, pf_initialize, pf_rejuvenate!, pf_resample!, pf_update!
+import LinearAlgebra: diagm, I, mul!, tr
+import LowLevelParticleFilters: covariance, forward_trajectory, ExtendedKalmanFilter, predict!, simulate
+import Optimization: AutoForwardDiff, OptimizationFunction, OptimizationProblem, solve
+import SeeToDee: Rk4
 import Statistics: mean, std
 
 using OptimizationOptimJL, OptimizationNLopt
+using StaticArrays
 using CairoMakie
 
 ## Constantes y parámetros de la trampa, la partícula, el feedback, la naturaleza y lo que sea obtenidos del paper
