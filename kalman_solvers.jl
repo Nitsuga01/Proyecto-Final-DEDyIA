@@ -96,7 +96,10 @@ function loglik_dataset(dataset,filter)
     ll_vec = Vector{type}(undef, N)
     u=fill([],length(dataset[1]))
 
+    
+
     for i in 1:N
+        filter.x = SA[type.(dataset[i][1])...,type.(zeros(4))...]
         try
             sol = forward_trajectory(filter, u, dataset[i])
             ll_vec[i] = sol.ll

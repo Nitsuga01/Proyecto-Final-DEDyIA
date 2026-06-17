@@ -170,8 +170,8 @@ lines!(ax32, tpoints, state_vec[:,6]*1e8, label = "True")
 lines!(ax31, tpoints, inf_vec[:,5]*1e8, label = "Infered")
 lines!(ax32, tpoints, inf_vec[:,6]*1e8, label = "Infered")
 Label(g1br[0, 1:2], "Momento Estimado", font = :bold, tellwidth=false)
-Label(g1ur[1, 1, Top()], halign = :left, L"\times 10^{-8}")
-Label(g1ur[1, 2, Top()], halign = :left, L"\times 10^{-8}")
+Label(g1br[1, 1, Top()], halign = :left, L"\times 10^{-8}")
+Label(g1br[1, 2, Top()], halign = :left, L"\times 10^{-8}")
 fig1
 
 save("Graphics/state_inference.png", fig1)
@@ -201,6 +201,7 @@ function define_problem(dataset, loss_function, to, tf, Δt, noopt_params; ode_x
         covmat[5,5] += erry^2/2/vy
         d0 = MvNormal(T.(zeros(6)),T.(covmat))
         p=T[T.(ux),T.(uy),opt_params...,T.(σ)]
+        p=SA(p)
         filter = trap_kalman_filter(d0,to,tf,Δt,p;ode_xo=s,ode_abstol=1e-10,ode_reltol=1e-6)
         loss_function(dataset,filter)
     end
@@ -283,8 +284,8 @@ end
 p_start = [ux,uy]
 adtype = AutoForwardDiff()
 
-tf_vec = [2.0,5.0,10.0,20.0,50.0,100.0,200.0,500.0]
-Δt_vec = [0.001,0.01,0.1,1.0]
+tf_vec = [10.0,20.0,50.0,100.0,200.0,500.0]
+Δt_vec = [0.05,0.1,1.0]
 sol = zeros(length(tf_vec),length(Δt_vec),2)
 
 for i in eachindex(tf_vec), j in eachindex(Δt_vec)
@@ -312,7 +313,8 @@ tfo=500.0
 loss = final_variance_problem(to,tfo,Δt,feedback_params[3:end])
 optf = OptimizationFunction(loss,adtype)
 prob = OptimizationProblem(optf, p_start)#, lb = zeros(4), ub=10 .*p)
-u_opt = solve(prob, Optim.GradientDescent()).u
+sol = solve(prob, Optim.GradientDescent())
+sol.u
 
 exprange=-1:0.05:1
 vals_pred = [loss([u_opt[1]*10^e1, u_opt[2]*10^e2],[]) for e1 in exprange, e2 in exprange]
@@ -325,7 +327,7 @@ covmat[3,5] = covmat[5,3] = covmat[3,3]
 covmat[4,6] = covmat[6,4] = covmat[4,4]
 covmat[6,6] += errx^2/2/vx
 covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+d0 = MvNormal(zeros(6),covmat)
 kf = trap_kalman_filter(d0,to,tfo,Δt,SA[u_opt...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 
 covariances_opt=[]
@@ -341,7 +343,7 @@ covmat[3,5] = covmat[5,3] = covmat[3,3]
 covmat[4,6] = covmat[6,4] = covmat[4,4]
 covmat[6,6] += errx^2/2/vx
 covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+d0 = MvNormal(zeros(6),covmat)
 kf = trap_kalman_filter(d0,to,tfo,Δt,SA[(u_opt.*10)...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 
 covariances_high=[]
@@ -357,7 +359,7 @@ covmat[3,5] = covmat[5,3] = covmat[3,3]
 covmat[4,6] = covmat[6,4] = covmat[4,4]
 covmat[6,6] += errx^2/2/vx
 covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+d0 = MvNormal(zeros(6),covmat)
 kf = trap_kalman_filter(d0,to,tfo,Δt,SA[(u_opt./10)...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 
 covariances_low=[]
@@ -366,22 +368,60 @@ for _ in 1:Int(tfo/Δt)
     predict!(kf, [], SA[(u_opt./10)...,feedback_params[3:end]...])
     push!(covariances_low,tr(covariance(kf)[1:2,1:2]))
 end
+##
 
-fig2=Figure(size=(600,600))
-ax21 = Axis(fig2[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t)\right)", yscale=log10)
-lines!(ax21, Δt:Δt:tfo, covariances, label = L"\mathbf{u}_{opt}")
+fig2=Figure(size=(450,450))
+g1 = fig2[1,1]
+g2 = fig2[2,1]
+ax21 = Axis(g1[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t)\right)", yscale=log10)
+lines!(ax21, Δt:Δt:tfo, covariances_opt, label = L"\mathbf{u}_{opt}")
 lines!(ax21, Δt:Δt:tfo, covariances_high, label = L"10\cdot\mathbf{u}_{opt}")
 lines!(ax21, Δt:Δt:tfo, covariances_low, label = L"1/10\cdot\mathbf{u}_{opt}")
-Legend(fig2[1,2],[ax21])
-ax22 = Axis(fig2[2,1], xlabel=L"\log(u_x/u_{x0})", ylabel=L"\log(u_y/u_{y0})")
-hm=heatmap!(ax22, exprange, exprange, log.(vals_pred))
-Colorbar(fig2[2,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t_f)\right)")
-colsize!(fig2.layout, 2, Auto(0.5))
-rowgap!(fig2, 10)
-colgap!(fig2, 10)
-
+Legend(g1[0,1],[ax21],orientation = :horizontal,tellwidth=false, tellheight=true, padding = (0, 0, 0, 0))
+ax22 = Axis(g2[1,1], xlabel=L"\log(u_x/u_{x0})", ylabel=L"\log(u_y/u_{y0})")
+hm=heatmap!(ax22, exprange, exprange, log10.(vals_pred))
+cb=Colorbar(g2[1,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t_f)\right) \; [\log_{10}]", tellwidth=true, alignmode=Mixed(right=0))
+#colsize!(fig2.layout, 2, Auto(0.2))
 fig2
 save("Graphics/covar_optim.png", fig2)
+
+##
+
+fig=Figure(size=(800,400))
+gl=fig[1,1]
+gr=fig[1,2]
+
+#Label(gl[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
+Label(gl[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^{%$N})\right)\right>", tellheight=false, rotation = pi/2)
+Label(gl[0, 1], L"v\sim v_0\cdot 10^e", tellheight=true, tellwidth=false)
+Label(gl[0, 2], L"\bar{\bar{G}}_{\mathbf q}\sim \bar{\bar{G}}_{\mathbf q 0}\cdot 10^e", tellheight=true, tellwidth=false)
+ax11=Axis(gl[1,1], xlabel = "e", ylabel = "Mean Loss")
+#Label(gl[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
+ax12=Axis(gl[1,2], xlabel = "e", ylabel = "Mean Loss")
+lines!(ax11, exprange, [l[1] for l in l1])
+errorbars!(ax11, exprange, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
+lines!(ax12, exprange, [l[1] for l in l2])
+errorbars!(ax12, exprange, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
+#hidexdecorations!(ax11, ticks = false, grid = false)
+hideydecorations!(ax11)
+hideydecorations!(ax12)
+
+g21 = gr[1,1]
+g22 = gr[2,1]
+ax21 = Axis(g21[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t)\right)", yscale=log10)
+lines!(ax21, Δt:Δt:tfo, covariances_opt, label = L"\mathbf{u}_{opt}")
+lines!(ax21, Δt:Δt:tfo, covariances_high, label = L"10\cdot\mathbf{u}_{opt}")
+lines!(ax21, Δt:Δt:tfo, covariances_low, label = L"1/10\cdot\mathbf{u}_{opt}")
+Legend(g21[0,1],[ax21],orientation = :horizontal,tellwidth=false, tellheight=true, padding = (0, 0, 0, 0))
+ax22 = Axis(g22[1,1], xlabel=L"\log(u_x/u_{x0})", ylabel=L"\log(u_y/u_{y0})")
+hm=heatmap!(ax22, exprange, exprange, log10.(vals_pred))
+cb=Colorbar(g22[1,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t_f)\right) \; [\log_{10}]", tellwidth=true, alignmode=Mixed(right=0))
+#colsize!(fig2.layout, 2, Auto(0.2))
+save("Graphics/mega_fig.png", fig)
+fig
+
+
+
 
 ##
 #=
