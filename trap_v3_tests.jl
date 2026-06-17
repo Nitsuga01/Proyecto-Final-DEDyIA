@@ -9,7 +9,7 @@ include("optical_trap_SDE_methods.jl")
 model = SDEObs
 solver_params = (; nssteps=4)#, ode_xo = zeros(10), sde_xo=zeros(6))
 
-to,tf,Δt = 0.0,50.0,0.1
+to,tf,Δt = 0.0,50.0,0.05
 tpoints = to:Δt:tf
 
 ux = -0.1
@@ -18,7 +18,7 @@ vx = 0.1
 vy = 0.1
 errx = 1e-9
 erry = 1e-9
-σ = 0.01
+σ = 0.05
 feedback_params=[ux,uy,vx,vy,errx,erry,σ]
 
 ode_abstol = 1e-10
@@ -34,6 +34,7 @@ println("La magnitud inicial es: $(round.(thermal_values(n₀)[[1,3]],sigdigits=
 
 prob_ode = ODEProblem(ode_drift!, ode_xo, (to,tf))
 sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf)
+t_estim = 0.0:π/Ω/100:π/Ω
 
 maximum_values = round.(maximum.([abs.(sol_ode[i,:]) for i in eachindex(ode_xo)]),sigdigits=2)
 
@@ -43,16 +44,44 @@ println("La magnitud del ruido será en este caso:")
 w=zeros(6,3)
 sde_diffusion!(w,feedback_params,maximum_values)
 show(stdout,"text/plain",round.(w,sigdigits=2))
+println()
 println("Con un stepsize $Δt, esto sería una influencia del orden:")
 show(stdout,"text/plain",round.(sqrt(Δt).*w,sigdigits=2))
 println()
+println()
+
+println("Para chequear, pude encontrar los siguientes ordenes en el ruido de la aproximación de la parte estocastica de la ecuación en nuestro caso")
+println("Son dos, ambos de orden Δt^{3/2}. Voy a estimar su magnitud. El primero es de orden")
+a=zeros(6,3)
+b=zeros(6,3)
+dotw=zeros(6,3)
+for i in eachindex(to+Δt:Δt:tf)
+    sde_diffusion!(a,feedback_params,sol_ode[:,i])
+    sde_diffusion!(b,feedback_params,sol_ode[:,i+1])
+    diff = (b-a)/Δt
+    dotw = [maximum([dotw[i,j],abs(diff[i,j])]) for i in 1:6, j in 1:3]
+end
+show(stdout,"text/plain",round.(sqrt(Δt^3/3).*dotw,sigdigits=2))
+println()
+println("Y el segundo término de orden:")
+a=zeros(6,3)
+b=zeros(6,3)
+wgrada=zeros(6,3)
+for i in eachindex(to:Δt:tf)
+    sde_diffusion!(a,feedback_params,sol_ode[:,i])
+    b=sde_drift_jacobian(zeros(6),[],feedback_params,i,to,Δt)
+    d = b * a
+    wgrada = [maximum([dotw[i,j],abs(d[i,j])]) for i in 1:6, j in 1:3]
+end
+show(stdout,"text/plain",round.(sqrt(Δt^3/3).*wgrada,sigdigits=2))
+println()
+
 println()
 
 println("En cuanto a la fuerza, asumiendo que el valor medio de la posición y el momento es nulo (subestimando entonces), pero usando los máximos de la dispersión:")
 x_maxes = sqrt.(maximum_values[[1,3,8,10]])
 println("Los valores típicos, basados únicamente en la dispersión serán del orden $(round.(x_maxes,sigdigits=2))")
 f = zeros(6)
-t_estim = 0.0:2*π/Ω/100:2*π/Ω
 for t in t_estim
     a=zeros(6)
     sde_drift!(a,[x_maxes...,0.0,0.0],feedback_params,t)
@@ -80,6 +109,7 @@ mats = [sde_drift_jacobian(zeros(6),[],feedback_params,i,to,Δt) for i in eachin
 sens_max = [maximum([abs(mats[j][i,k]) for j in eachindex(t_estim)]) for i in 1:6, k in 1:6]
 show(stdout,"text/plain",round.(sens_max.*Δt,sigdigits=2))
 println()
+
 println("----------------------------------------------------------------------------------")
 
 ## Para analizar las trayectorias y el comportamiento del sistema en función de los parámetros
@@ -95,54 +125,67 @@ covmat[3,5] = covmat[5,3] = covmat[3,3]
 covmat[4,6] = covmat[6,4] = covmat[4,4]
 covmat[6,6] += errx^2/2/vx
 covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(zeros(6),covmat)
-kf = trap_kalman_filter(d0,0.0,150.0,0.1,(feedback_params...,σ);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+kf = trap_kalman_filter(d0,to,tf,Δt,feedback_params;ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
 inf_vec=[sol.x[i][j] for i in eachindex(sol.x), j in 1:6]
 
 print("Done.")
+## Genero una figura para esto
 
-fig1=Figure(title="Posición")
-ax11 = Axis(fig1[1,1], xlabel = "t (us)", ylabel = "x (nm)")
-ax12 = Axis(fig1[1,2], xlabel = "t (us)", ylabel = "y (nm)")
-lines!(ax11, tpoints, obs_positions[:,1], label = "Measured")
-lines!(ax11, tpoints, inf_vec[:,1], label = "Infered")
+fig1=Figure(size=(1000,700))
+g1l = fig1[1:2,1]
+g1ur = fig1[1,2]
+g1br = fig1[2,2]
+
+
+ax11 = Axis(g1l[2,1], xlabel = "Time [us]", ylabel = L"$\left<x\right>$ [nm]")
+ax12 = Axis(g1l[3,1], xlabel = "Time [us]", ylabel = L"$\left<y\right>$ [nm]")
 lines!(ax11, tpoints, state_vec[:,1], label = "True")
-lines!(ax12, tpoints, obs_positions[:,2], label = "Measured")
-lines!(ax12, tpoints, inf_vec[:,2], label = "Infered")
 lines!(ax12, tpoints, state_vec[:,2], label = "True")
-fig1[0,1:2]=Legend(fig1, [ax11,ax12], merge=true, orientation = :horizontal, tellheight = true)
+lines!(ax11, tpoints, inf_vec[:,1], label = "Infered")
+lines!(ax12, tpoints, inf_vec[:,2], label = "Infered")
+lines!(ax11, tpoints, obs_positions[:,1], label = "Measured", alpha=0.5)
+lines!(ax12, tpoints, obs_positions[:,2], label = "Measured", alpha=0.5)
+leg=Legend(g1l[0,1], [ax11,ax12], merge=true, orientation = :horizontal, tellheight = true)
+Label(g1l[1, 1], "Posición", font = :bold, tellwidth=false)
+hidexdecorations!(ax11, grid = false, ticks=false)
+
+ax21 = Axis(g1ur[1,1], xlabel = "Time [us]", ylabel = L"$\left<p_x\right>$ [ev us/nm]")
+ax22 = Axis(g1ur[1,2], xlabel = "Time [us]", ylabel = L"$\left<p_y\right>$ [ev us/nm]")
+lines!(ax21, tpoints, state_vec[:,3]*1e8, label = "True")
+lines!(ax22, tpoints, state_vec[:,4]*1e8, label = "True")
+lines!(ax21, tpoints, inf_vec[:,3]*1e8, label = "Infered")
+lines!(ax22, tpoints, inf_vec[:,4]*1e8, label = "Infered")
+Label(g1ur[0, 1:2], "Momento", font = :bold, tellwidth=false)
+Label(g1ur[1, 1, Top()], halign = :left, L"\times 10^{-8}")
+Label(g1ur[1, 2, Top()], halign = :left, L"\times 10^{-8}")
+#hidexdecorations!(ax11, grid = false, ticks=false)
+
+
+ax31 = Axis(g1br[1,1], xlabel = "Time [us]", ylabel = L"$\left<q_x\right>$ [ev us/nm]")
+ax32 = Axis(g1br[1,2], xlabel = "Time [us]", ylabel = L"$\left<q_y\right>$ [ev us/nm]")
+lines!(ax31, tpoints, state_vec[:,5]*1e8, label = "True")
+lines!(ax32, tpoints, state_vec[:,6]*1e8, label = "True")
+lines!(ax31, tpoints, inf_vec[:,5]*1e8, label = "Infered")
+lines!(ax32, tpoints, inf_vec[:,6]*1e8, label = "Infered")
+Label(g1br[0, 1:2], "Momento Estimado", font = :bold, tellwidth=false)
+Label(g1ur[1, 1, Top()], halign = :left, L"\times 10^{-8}")
+Label(g1ur[1, 2, Top()], halign = :left, L"\times 10^{-8}")
 fig1
 
-fig2=Figure(title="Momento")
-ax21 = Axis(fig2[1,1], xlabel = "t (us)", ylabel = "px (ev us / nm)")
-ax22 = Axis(fig2[1,2], xlabel = "t (us)", ylabel = "py (ev us / nm)")
-lines!(ax21, tpoints, inf_vec[:,3], label = "Infered")
-lines!(ax21, tpoints, state_vec[:,3], label = "True")
-lines!(ax22, tpoints, inf_vec[:,4], label = "Infered")
-lines!(ax22, tpoints, state_vec[:,4], label = "True")
-fig2[0,1:2]=Legend(fig2, [ax21,ax22], merge=true, orientation = :horizontal, tellheight = true)
-fig2
+save("Graphics/state_inference.png", fig1)
 
-fig3=Figure(title="Momento Estimado")
-ax31 = Axis(fig3[1,1], xlabel = "t (us)", ylabel = "qx (ev us / nm)")
-ax32 = Axis(fig3[1,2], xlabel = "t (us)", ylabel = "qy (ev us / nm)")
-lines!(ax31, tpoints, inf_vec[:,5], label = "Infered")
-lines!(ax31, tpoints, state_vec[:,5], label = "True")
-lines!(ax32, tpoints, inf_vec[:,6], label = "Infered")
-lines!(ax32, tpoints, state_vec[:,6], label = "True")
-fig3[0,1:2]=Legend(fig3, [ax31,ax32], merge=true, orientation = :horizontal, tellheight = true)
-fig3
 
 ## Genero un dataset para lo siguiente
 
-N=100
+N=1000
 dataset = []
 for _ in 1:N
     obs_trace = simulate(model, (tpoints, (ux,uy,vx,vy,errx,erry,σ), solver_params))
-    state_vec, obs_positions = get_retval(obs_trace)
-    obs_vec = [obs_positions[k,:] for k in 1:size(obs_positions)[1]]
-    push!(dataset,obs_vec)
+    tr_state_vec, tr_obs_positions = get_retval(obs_trace)
+    tr_obs_vec = [tr_obs_positions[k,:] for k in 1:size(tr_obs_positions)[1]]
+    push!(dataset,tr_obs_vec)
 end
 
 ## Puedo inferir los parámetros que rigen sobre el ruido del momento estimado?
@@ -190,14 +233,22 @@ exprange=-2:0.1:2
 l1=[p_test(p_alt1(e)) for e in exprange]
 l2=[p_test(p_alt2(e)) for e in exprange]
 
-fig1=Figure()
-ax11=Axis(fig1[1,1], xlabel = "Exponente para v (log(param/param_opt))", ylabel = "loss")
-ax12=Axis(fig1[1,2], xlabel = "Exponente para err (log(param/param_opt))", ylabel = "loss")
+## Gráfico de esta cosa.
+
+fig1=Figure(figsize=(600,600))
+Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
+Label(fig1[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
+ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v\sim v_0\cdot 10^e")
+ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\bar{\bar{G}}_{\mathbf q}\sim \bar{\bar{G}}_{\mathbf q 0}\cdot 10^e")
 lines!(ax11, exprange, [l[1] for l in l1])
-errorbars!(ax11, exprange, [l[1] for l in l1], [l[2] for l in l1])
+errorbars!(ax11, exprange, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
 lines!(ax12, exprange, [l[1] for l in l2])
-errorbars!(ax12, exprange, [l[1] for l in l2], [l[2] for l in l2])
+errorbars!(ax12, exprange, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
+#hidexdecorations!(ax11, ticks = false, grid = false)
+hideydecorations!(ax11)
+hideydecorations!(ax12)
 fig1
+save("Graphics/param_inference.png", fig1)
 
 #adtype = AutoForwardDiff()
 #optf = OptimizationFunction(define_problem(dataset,loss_function_sum,to,tf,Δt,(ux,uy,σ)),adtype)
@@ -206,14 +257,15 @@ fig1
 
 ## Puedo aunque sea optimizar ux y uy tal que se minimize la varianza de la posición al final?
 
-tpoints = to:Δt:tf
-feedback_params = (ux,uy,vx,vy,errx,erry)
-solver_params = (; nssteps=4)#, ode_xo = zeros(10), sde_xo=zeros(6))
-
 function final_variance_problem(to, tf, Δt, noopt_params)
     loss(opt_params::Vector{T},_) where T = begin
         s = thermal_values(n₀)
-        d0 = MvNormal(T.(zeros(6)),T.(diagm(s[[1,3,8,10,8,10]])))
+        covmat = diagm(s[[1,3,8,10,8,10]])
+        covmat[3,5] = covmat[5,3] = covmat[3,3]
+        covmat[4,6] = covmat[6,4] = covmat[4,4]
+        covmat[6,6] += errx^2/2/vx
+        covmat[5,5] += erry^2/2/vy
+        d0 = MvNormal(T.(zeros(6)),T.(covmat))
         p=T[opt_params..., T.(noopt_params)...]
 
         filter = trap_kalman_filter(d0,to,tf,Δt,p)
@@ -231,12 +283,12 @@ end
 p_start = [ux,uy]
 adtype = AutoForwardDiff()
 
-tf_vec = [2.0,5.0,10.0,20.0,50.0]
+tf_vec = [2.0,5.0,10.0,20.0,50.0,100.0,200.0,500.0]
 Δt_vec = [0.001,0.01,0.1,1.0]
 sol = zeros(length(tf_vec),length(Δt_vec),2)
 
 for i in eachindex(tf_vec), j in eachindex(Δt_vec)
-    optf = OptimizationFunction(final_variance_problem(to,tf_vec[i],Δt_vec[j],(feedback_params[3:end]...,σ)),adtype)
+    optf = OptimizationFunction(final_variance_problem(to,tf_vec[i],Δt_vec[j],feedback_params[3:end]),adtype)
     prob = OptimizationProblem(optf, p_start)#, lb = zeros(4), ub=10 .*p)
     u_opt = solve(prob, Optim.GradientDescent()).u
     sol[i,j,:] .= u_opt
@@ -253,6 +305,83 @@ for k in eachindex(Δt_vec)
 end
 fig1[0,1:2]=Legend(fig1, [ax11,ax12], merge=true, orientation = :horizontal, tellheight = true)
 fig1
+## Ahora me fijo como depende la varianza a tiempo 500.0 con u
+
+tfo=500.0
+
+loss = final_variance_problem(to,tfo,Δt,feedback_params[3:end])
+optf = OptimizationFunction(loss,adtype)
+prob = OptimizationProblem(optf, p_start)#, lb = zeros(4), ub=10 .*p)
+u_opt = solve(prob, Optim.GradientDescent()).u
+
+exprange=-1:0.05:1
+vals_pred = [loss([u_opt[1]*10^e1, u_opt[2]*10^e2],[]) for e1 in exprange, e2 in exprange]
+
+##
+
+s = thermal_values(n₀)
+covmat = diagm(s[[1,3,8,10,8,10]])
+covmat[3,5] = covmat[5,3] = covmat[3,3]
+covmat[4,6] = covmat[6,4] = covmat[4,4]
+covmat[6,6] += errx^2/2/vx
+covmat[5,5] += erry^2/2/vy
+d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+kf = trap_kalman_filter(d0,to,tfo,Δt,SA[u_opt...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+
+covariances_opt=[]
+
+for _ in 1:Int(tfo/Δt)
+    predict!(kf, [], SA[u_opt...,feedback_params[3:end]...])
+    push!(covariances_opt,tr(covariance(kf)[1:2,1:2]))
+end
+
+s = thermal_values(n₀)
+covmat = diagm(s[[1,3,8,10,8,10]])
+covmat[3,5] = covmat[5,3] = covmat[3,3]
+covmat[4,6] = covmat[6,4] = covmat[4,4]
+covmat[6,6] += errx^2/2/vx
+covmat[5,5] += erry^2/2/vy
+d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+kf = trap_kalman_filter(d0,to,tfo,Δt,SA[(u_opt.*10)...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+
+covariances_high=[]
+
+for _ in 1:Int(tfo/Δt)
+    predict!(kf, [], SA[(u_opt.*10)...,feedback_params[3:end]...])
+    push!(covariances_high,tr(covariance(kf)[1:2,1:2]))
+end
+
+s = thermal_values(n₀)
+covmat = diagm(s[[1,3,8,10,8,10]])
+covmat[3,5] = covmat[5,3] = covmat[3,3]
+covmat[4,6] = covmat[6,4] = covmat[4,4]
+covmat[6,6] += errx^2/2/vx
+covmat[5,5] += erry^2/2/vy
+d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
+kf = trap_kalman_filter(d0,to,tfo,Δt,SA[(u_opt./10)...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+
+covariances_low=[]
+
+for _ in 1:Int(tfo/Δt)
+    predict!(kf, [], SA[(u_opt./10)...,feedback_params[3:end]...])
+    push!(covariances_low,tr(covariance(kf)[1:2,1:2]))
+end
+
+fig2=Figure(size=(600,600))
+ax21 = Axis(fig2[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t)\right)", yscale=log10)
+lines!(ax21, Δt:Δt:tfo, covariances, label = L"\mathbf{u}_{opt}")
+lines!(ax21, Δt:Δt:tfo, covariances_high, label = L"10\cdot\mathbf{u}_{opt}")
+lines!(ax21, Δt:Δt:tfo, covariances_low, label = L"1/10\cdot\mathbf{u}_{opt}")
+Legend(fig2[1,2],[ax21])
+ax22 = Axis(fig2[2,1], xlabel=L"\log(u_x/u_{x0})", ylabel=L"\log(u_y/u_{y0})")
+hm=heatmap!(ax22, exprange, exprange, log.(vals_pred))
+Colorbar(fig2[2,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t_f)\right)")
+colsize!(fig2.layout, 2, Auto(0.5))
+rowgap!(fig2, 10)
+colgap!(fig2, 10)
+
+fig2
+save("Graphics/covar_optim.png", fig2)
 
 ##
 #=
