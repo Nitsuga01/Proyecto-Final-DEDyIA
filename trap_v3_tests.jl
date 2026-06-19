@@ -19,7 +19,7 @@ vy = 0.1
 errx = 1e-9
 erry = 1e-9
 σ = 0.05
-feedback_params=[ux,uy,vx,vy,errx,erry,σ]
+feedback_params=SArray{Tuple{7},Float64}(ux,uy,vx,vy,errx,erry,σ)
 
 ode_abstol = 1e-10
 ode_reltol = 1e-6
@@ -59,7 +59,7 @@ for i in eachindex(to+Δt:Δt:tf)
     sde_diffusion!(a,feedback_params,sol_ode[:,i])
     sde_diffusion!(b,feedback_params,sol_ode[:,i+1])
     diff = (b-a)/Δt
-    dotw = [maximum([dotw[i,j],abs(diff[i,j])]) for i in 1:6, j in 1:3]
+    dotw .= [maximum([dotw[i,j],abs(diff[i,j])]) for i in 1:6, j in 1:3]
 end
 show(stdout,"text/plain",round.(sqrt(Δt^3/3).*dotw,sigdigits=2))
 println()
@@ -119,14 +119,9 @@ obs_trace = simulate(model, (tpoints, feedback_params, solver_params))
 state_vec, obs_positions = get_retval(obs_trace)
 obs_vec = [obs_positions[k,:] for k in 1:size(obs_positions)[1]]
 
-s = thermal_values(n₀)
-covmat = diagm(s[[1,3,8,10,8,10]])
-covmat[3,5] = covmat[5,3] = covmat[3,3]
-covmat[4,6] = covmat[6,4] = covmat[4,4]
-covmat[6,6] += errx^2/2/vx
-covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(SVector(obs_vec[1][1:2]..., zeros(4)...),covmat)
-kf = trap_kalman_filter(d0,to,tf,Δt,feedback_params;ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+# preparo la distribución inicial
+
+kf = trap_kalman_filter(to,tf,Δt,feedback_params,d0(feedback_params,true,obs_vec[1]);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
 inf_vec=[sol.x[i][j] for i in eachindex(sol.x), j in 1:6]
 
@@ -175,8 +170,6 @@ Label(g1br[1, 2, Top()], halign = :left, L"\times 10^{-8}")
 fig1
 
 save("Graphics/state_inference.png", fig1)
-
-
 ## Genero un dataset para lo siguiente
 
 N=1000
@@ -193,16 +186,8 @@ end
 function define_problem(dataset, loss_function, to, tf, Δt, noopt_params; ode_xo=thermal_values(n₀), ode_abstol=1e-10, ode_reltol=1e-6)
     ux, uy, σ = noopt_params
     loss(opt_params::Vector{T},_) where T = begin
-        s = thermal_values(n₀)
-        covmat = diagm(s[[1,3,8,10,8,10]])
-        covmat[3,5] = covmat[5,3] = covmat[3,3]
-        covmat[4,6] = covmat[6,4] = covmat[4,4]
-        covmat[6,6] += errx^2/2/vx
-        covmat[5,5] += erry^2/2/vy
-        d0 = MvNormal(T.(zeros(6)),T.(covmat))
-        p=T[T.(ux),T.(uy),opt_params...,T.(σ)]
-        p=SA(p)
-        filter = trap_kalman_filter(d0,to,tf,Δt,p;ode_xo=s,ode_abstol=1e-10,ode_reltol=1e-6)
+        p=SArray{Tuple{7},T}(ux,uy,opt_params...,σ)
+        filter = trap_kalman_filter(to,tf,Δt,p,d0(p);ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6)
         loss_function(dataset,filter)
     end
     return loss
@@ -229,7 +214,7 @@ p_alt2(exponent)=[vx,vy,errx*10^exponent,erry]
 p_test(params) = begin l=loss(params,0)
     return -mean(l),std(l)
 end
-exprange=-2:0.1:2
+exprange=-3:0.1:3
 
 l1=[p_test(p_alt1(e)) for e in exprange]
 l2=[p_test(p_alt2(e)) for e in exprange]
@@ -256,33 +241,9 @@ save("Graphics/param_inference.png", fig1)
 #prob = OptimizationProblem(optf, p_start)#, lb = zeros(4), ub=10 .*p)
 #sol = solve(prob, Optim.GradientDescent())
 
+
 ## Puedo aunque sea optimizar ux y uy tal que se minimize la varianza de la posición al final?
-
-function final_variance_problem(to, tf, Δt, noopt_params)
-    loss(opt_params::Vector{T},_) where T = begin
-        s = thermal_values(n₀)
-        covmat = diagm(s[[1,3,8,10,8,10]])
-        covmat[3,5] = covmat[5,3] = covmat[3,3]
-        covmat[4,6] = covmat[6,4] = covmat[4,4]
-        covmat[6,6] += errx^2/2/vx
-        covmat[5,5] += erry^2/2/vy
-        d0 = MvNormal(T.(zeros(6)),T.(covmat))
-        p=T[opt_params..., T.(noopt_params)...]
-
-        filter = trap_kalman_filter(d0,to,tf,Δt,p)
-        
-        for i in eachindex(to:Δt:tf)
-            predict!(filter,[],filter.p)
-        end
-
-        c=covariance(filter)
-        return(tr(c[1:2,1:2]))
-    end
-    return loss
-end
-
-p_start = [ux,uy]
-adtype = AutoForwardDiff()
+#=
 
 tf_vec = [10.0,20.0,50.0,100.0,200.0,500.0]
 Δt_vec = [0.05,0.1,1.0]
@@ -306,7 +267,27 @@ for k in eachindex(Δt_vec)
 end
 fig1[0,1:2]=Legend(fig1, [ax11,ax12], merge=true, orientation = :horizontal, tellheight = true)
 fig1
+
+=#
 ## Ahora me fijo como depende la varianza a tiempo 500.0 con u
+
+function final_variance_problem(to, tf, Δt, noopt_params)
+    loss(opt_params::Vector{T},_) where T = begin
+        p = SArray{Tuple{7},T}(opt_params...,noopt_params...)
+        filter = trap_kalman_filter(to,tf,Δt,p,d0(p,false))
+        
+        for i in eachindex(to:Δt:tf)
+            predict!(filter,[],filter.p)
+        end
+
+        c=covariance(filter)
+        return(tr(c[1:2,1:2]))
+    end
+    return loss
+end
+
+p_start = [ux,uy]
+adtype = AutoForwardDiff()
 
 tfo=500.0
 
@@ -314,21 +295,15 @@ loss = final_variance_problem(to,tfo,Δt,feedback_params[3:end])
 optf = OptimizationFunction(loss,adtype)
 prob = OptimizationProblem(optf, p_start)#, lb = zeros(4), ub=10 .*p)
 sol = solve(prob, Optim.GradientDescent())
-sol.u
+u_opt=sol.u
 
 exprange=-1:0.05:1
 vals_pred = [loss([u_opt[1]*10^e1, u_opt[2]*10^e2],[]) for e1 in exprange, e2 in exprange]
 
 ##
 
-s = thermal_values(n₀)
-covmat = diagm(s[[1,3,8,10,8,10]])
-covmat[3,5] = covmat[5,3] = covmat[3,3]
-covmat[4,6] = covmat[6,4] = covmat[4,4]
-covmat[6,6] += errx^2/2/vx
-covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(zeros(6),covmat)
-kf = trap_kalman_filter(d0,to,tfo,Δt,SA[u_opt...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+p_u=SA[u_opt...,feedback_params[3:end]...]
+kf = trap_kalman_filter(to,tfo,Δt,p_uopt,d0(p_u);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 
 covariances_opt=[]
 
@@ -337,14 +312,8 @@ for _ in 1:Int(tfo/Δt)
     push!(covariances_opt,tr(covariance(kf)[1:2,1:2]))
 end
 
-s = thermal_values(n₀)
-covmat = diagm(s[[1,3,8,10,8,10]])
-covmat[3,5] = covmat[5,3] = covmat[3,3]
-covmat[4,6] = covmat[6,4] = covmat[4,4]
-covmat[6,6] += errx^2/2/vx
-covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(zeros(6),covmat)
-kf = trap_kalman_filter(d0,to,tfo,Δt,SA[(u_opt.*10)...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+p_u=SA[(u_opt.*10)...,feedback_params[3:end]...]
+kf = trap_kalman_filter(to,tfo,Δt,p_u,d0(p_u);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 
 covariances_high=[]
 
@@ -353,14 +322,8 @@ for _ in 1:Int(tfo/Δt)
     push!(covariances_high,tr(covariance(kf)[1:2,1:2]))
 end
 
-s = thermal_values(n₀)
-covmat = diagm(s[[1,3,8,10,8,10]])
-covmat[3,5] = covmat[5,3] = covmat[3,3]
-covmat[4,6] = covmat[6,4] = covmat[4,4]
-covmat[6,6] += errx^2/2/vx
-covmat[5,5] += erry^2/2/vy
-d0 = MvNormal(zeros(6),covmat)
-kf = trap_kalman_filter(d0,to,tfo,Δt,SA[(u_opt./10)...,feedback_params[3:end]...];ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
+p_u=SA[(u_opt./10)...,feedback_params[3:end]...]
+kf = trap_kalman_filter(to,tfo,Δt,p_u,d0(p_u);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 
 covariances_low=[]
 

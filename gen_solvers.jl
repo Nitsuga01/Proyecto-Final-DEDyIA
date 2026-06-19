@@ -16,8 +16,8 @@ El sistema se simula y se retornan datos observacionales (agregando error de med
 - nsteps es el número de pasos del solver numérico entre cada punto de tpoints.
 - ode_abstol y ode_reltol controlan la precisión de los solvers de DifferentialEquations
 """
-@gen function SDEObs(tpoints, feedback_params=(0.0,0.0,0.0,0.0,0.0,0.0,0.0), kwargs=(;))
-    kwarg_keys=[:sde_xo, :ode_xo, :nssteps, :ode_abstol, :ode_reltol]
+@gen function SDEObs(tpoints, feedback_params=SA[0.0,0.0,0.0,0.0,0.0,0.0,0.0], kwargs=(;))
+    kwarg_keys=SA[:sde_xo, :ode_xo, :nssteps, :ode_abstol, :ode_reltol]
     kwarg_vals = Dict()
     for k in kwarg_keys
         if k in keys(kwargs)

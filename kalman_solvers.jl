@@ -72,7 +72,7 @@ function sde_noise_matrix(u,input,p,t,second_moments)
     
 end
 
-function trap_kalman_filter(d0,to,tf,Δt,feedback_params;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
+function trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
     prob_ode = ODEProblem(ode_drift!, ode_xo, (to,tf))
     sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf)
     
@@ -86,27 +86,62 @@ function trap_kalman_filter(d0,to,tf,Δt,feedback_params;ode_xo=thermal_values(n
     discrete_dynamics = Rk4(continuous_dynamics,Δt;supersample=supersample)
     measurement = (u,input,p,i)->SA[u[1],u[2]]
 
-    kf=ExtendedKalmanFilter(discrete_dynamics,  measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
+    kf=ExtendedKalmanFilter(discrete_dynamics, measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
+end
+
+function gaussian_product(mu1, sigma1, mu2, sigma2)
+    inv1 = inv(sigma1)
+    inv2 = inv(sigma2)
+
+    sigma = inv(inv1+inv2)
+    mu = sigma*inv1*mu1 .+ sigma*inv2*mu2
+    return mu, sigma
+end
+
+function d0(params=SArray{Tuple{7},Float64}(0.0,0.0,0.0,0.0,0.0,0.0,0.0),datapoint=false,y=SArray{Tuple{2},Float64}(0.0,0.0))
+    # psrepara la distribución de estados iniciales
+    type = typeof(params[1])
+    s = type.(thermal_values(n₀))
+    C1 = diagm(s[[1,3,8,10,8,10]])
+    C1[3,5] = C1[5,3] = C1[3,3]
+    C1[4,6] = C1[6,4] = C1[4,4]
+    C1[5,5] += params[5]^2/2/params[3]
+    C1[6,6] += params[6]^2/2/params[4]
+
+    # si no hay dato inicial
+    if !(datapoint)
+        return MvNormal(SArray{Tuple{6},type}(0.0,0.0,0.0,0.0,0.0,0.0),SArray{Tuple{6,6},type}(C1...))
+    end
+
+    # prepara la distribución correspondiente a la medición
+    Q = C1[1:2,1:2] .+ I(2)*params[7]^2
+    
+    # devuelve el posterior
+    mu, sigma = gaussian_product(zeros(type,2),C1[1:2,1:2],y,Q)
+    C1[1:2,1:2] .= sigma
+
+    MvNormal(SArray{Tuple{6},type}(mu...,zeros(4)...),SArray{Tuple{6,6},type}(C1...))
 end
 
 ## Inference
 
 function loglik_dataset(dataset,filter)
+    N=length(dataset)
     type = typeof(filter.p[1])
     ll_vec = Vector{type}(undef, N)
     u=fill([],length(dataset[1]))
-
-    
-
     for i in 1:N
-        filter.x = SA[type.(dataset[i][1])...,type.(zeros(4))...]
+        mv = d0(filter.p,true,dataset[1][1])
+        filter.x=mv.μ
+        filter.R=mv.Σ
         try
             sol = forward_trajectory(filter, u, dataset[i])
             ll_vec[i] = sol.ll
         catch e
             if e isa ErrorException && e.msg[1:49] == "Cholesky factorization of α*R̃*α' failed at time "
-                # Si no puede ajustar la trayectoria (lo que suele resultar en este error), voy a asignar una loss infinita.
-                ll_vec[i] = -Inf
+                # Si no puede ajustar la trayectoria (lo que suele resultar en este error), voy a asignar una loss infinita, por lo que no vale la pena simular más.
+                ll_vec[i:N] = -Inf
+                break
             else
                 rethrow(e)
             end 
