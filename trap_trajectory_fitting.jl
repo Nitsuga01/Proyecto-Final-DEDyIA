@@ -1,6 +1,6 @@
 include("optical_trap_SDE_methods.jl")
 
-# parámetros
+## parámetros
 
 model = SDEObs
 solver_params = (; nssteps=4)#, ode_xo = zeros(10), sde_xo=zeros(6))
@@ -45,39 +45,39 @@ g1ur = fig1[1,2]
 g1br = fig1[2,2]
 
 
-ax11 = Axis(g1l[2,1], xlabel = "Time [us]", ylabel = L"$\left<x\right>$ [nm]")
-ax12 = Axis(g1l[3,1], xlabel = "Time [us]", ylabel = L"$\left<y\right>$ [nm]")
-lines!(ax11, tpoints, state_vec[:,1], label = "True")
-lines!(ax12, tpoints, state_vec[:,2], label = "True")
-lines!(ax11, tpoints, inf_vec[:,1], label = "Infered")
-lines!(ax12, tpoints, inf_vec[:,2], label = "Infered")
-lines!(ax11, tpoints, obs_positions[:,1], label = "Measured", alpha=0.5)
-lines!(ax12, tpoints, obs_positions[:,2], label = "Measured", alpha=0.5)
+ax11 = Axis(g1l[2,1], xlabel = "Tiempo [us]", ylabel = L"$\left<x\right>$ [nm]")
+ax12 = Axis(g1l[3,1], xlabel = "Tiempo [us]", ylabel = L"$\left<y\right>$ [nm]")
+lines!(ax11, tpoints, state_vec[:,1], label = "Verdadero")
+lines!(ax12, tpoints, state_vec[:,2], label = "Verdadero")
+lines!(ax11, tpoints, inf_vec[:,1], label = "Inferido")
+lines!(ax12, tpoints, inf_vec[:,2], label = "Inferido")
+lines!(ax11, tpoints, obs_positions[:,1], label = "Medido", alpha=0.5)
+lines!(ax12, tpoints, obs_positions[:,2], label = "Medido", alpha=0.5)
 leg=Legend(g1l[0,1], [ax11,ax12], merge=true, orientation = :horizontal, tellheight = true)
 Label(g1l[1, 1], "Posición", font = :bold, tellwidth=false)
 hidexdecorations!(ax11, grid = false, ticks=false)
 
-ax21 = Axis(g1ur[1,1], xlabel = "Time [us]", ylabel = L"$\left<p_x\right>$ [ev us/nm]")
-ax22 = Axis(g1ur[1,2], xlabel = "Time [us]", ylabel = L"$\left<p_y\right>$ [ev us/nm]")
-lines!(ax21, tpoints, state_vec[:,3]*1e8, label = "True")
-lines!(ax22, tpoints, state_vec[:,4]*1e8, label = "True")
-lines!(ax21, tpoints, inf_vec[:,3]*1e8, label = "Infered")
-lines!(ax22, tpoints, inf_vec[:,4]*1e8, label = "Infered")
+ax21 = Axis(g1ur[1,1], xlabel = "Tiempo [us]", ylabel = L"$\left<p_x\right>$ [ev us/nm]")
+ax22 = Axis(g1ur[1,2], xlabel = "Tiempo [us]", ylabel = L"$\left<p_y\right>$ [ev us/nm]")
+lines!(ax21, tpoints, state_vec[:,3]*1e8, label = "Verdadero")
+lines!(ax22, tpoints, state_vec[:,4]*1e8, label = "Verdadero")
+lines!(ax21, tpoints, inf_vec[:,3]*1e8, label = "Inferido")
+lines!(ax22, tpoints, inf_vec[:,4]*1e8, label = "Inferido")
 Label(g1ur[0, 1:2], "Momento", font = :bold, tellwidth=false)
 Label(g1ur[1, 1, Top()], halign = :left, L"\times 10^{-8}")
 Label(g1ur[1, 2, Top()], halign = :left, L"\times 10^{-8}")
 #hidexdecorations!(ax11, grid = false, ticks=false)
 
 
-ax31 = Axis(g1br[1,1], xlabel = "Time [us]", ylabel = L"$\left<q_x\right>$ [ev us/nm]")
-ax32 = Axis(g1br[1,2], xlabel = "Time [us]", ylabel = L"$\left<q_y\right>$ [ev us/nm]")
-lines!(ax31, tpoints, state_vec[:,5]*1e8, label = "True")
-lines!(ax32, tpoints, state_vec[:,6]*1e8, label = "True")
-lines!(ax31, tpoints, inf_vec[:,5]*1e8, label = "Infered")
-lines!(ax32, tpoints, inf_vec[:,6]*1e8, label = "Infered")
+ax31 = Axis(g1br[1,1], xlabel = "Tiempo [us]", ylabel = L"$\left<q_x\right>$ [ev us/nm]")
+ax32 = Axis(g1br[1,2], xlabel = "Tiempo [us]", ylabel = L"$\left<q_y\right>$ [ev us/nm]")
+lines!(ax31, tpoints, state_vec[:,5]*1e8, label = "Verdadero")
+lines!(ax32, tpoints, state_vec[:,6]*1e8, label = "Verdadero")
+lines!(ax31, tpoints, inf_vec[:,5]*1e8, label = "Inferido")
+lines!(ax32, tpoints, inf_vec[:,6]*1e8, label = "Inferido")
 Label(g1br[0, 1:2], "Momento Estimado", font = :bold, tellwidth=false)
 Label(g1br[1, 1, Top()], halign = :left, L"\times 10^{-8}")
 Label(g1br[1, 2, Top()], halign = :left, L"\times 10^{-8}")
 fig1
 
-save("Graphics/state_inference.png", fig1)
+save("Graphics/state_inference.pdf", fig1)

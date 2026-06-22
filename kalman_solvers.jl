@@ -89,6 +89,44 @@ function trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=thermal_values(n
     kf=ExtendedKalmanFilter(discrete_dynamics, measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
 end
 
+function inverse_trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
+    prob_ode = ODEProblem(ode_drift!, ode_xo, (to,tf))
+    sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf)
+    
+    # Matriz que da ruido de proceso al estado
+    R1 = (u,input,p,i) -> sde_noise_matrix(u,input,p,i,sol_ode[end-(i+1)]).*Δt
+    # Matriz de covarianza para el ruido de medición sobre el estado
+    R2 = SA[feedback_params[7]^2 0.0; 0.0 feedback_params[7]^2]
+
+    # Evolución
+    continuous_dynamics = (u,input,p,i)-> -sde_drift(u,input,p,i,to,Δt)
+    discrete_dynamics = Rk4(continuous_dynamics,Δt;supersample=supersample)
+    measurement = (u,input,p,i)->SA[u[1],u[2]]
+
+    kf=ExtendedKalmanFilter(discrete_dynamics,  measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
+end
+
+function fit_trayectory(to,tf,Δt,feedback_params,d0;iterations=1,ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
+
+    kf = trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=ode_xo,ode_abstol=ode_abstol,ode_reltol=ode_reltol,supersample=supersample)
+    sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
+
+    for i in 2:iterations
+        direct = iterations%2==1
+        if direct
+            mv = MvNormal(sol.x[end],sol.R[end])
+            kf = trap_kalman_filter(to,tf,Δt,feedback_params,mv;ode_abstol=ode_abstol,ode_reltol=ode_reltol,supersample=supersample)
+            sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
+        else
+            mv = MvNormal(sol.x[end],sol.R[end])
+            kf = inverse_trap_kalman_filter(to,tf,Δt,feedback_params,mv;ode_abstol=ode_abstol,ode_reltol=ode_reltol,supersample=supersample)
+            sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec[end:-1:1],kf.p)
+        end
+    end
+    
+    return sol
+end
+
 function gaussian_product(mu1, sigma1, mu2, sigma2)
     inv1 = inv(sigma1)
     inv2 = inv(sigma2)

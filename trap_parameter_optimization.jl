@@ -154,14 +154,14 @@ hideydecorations!(ax12)
 
 g21 = gr[1,1]
 g22 = gr[2,1]
-ax21 = Axis(g21[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t)\right)", yscale=log10)
+ax21 = Axis(g21[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\left<\mathbf{x}\right>}(t)\right)", yscale=log10)
 lines!(ax21, Δt:Δt:tf, covariances_opt, label = L"\mathbf{u}_{opt}")
 lines!(ax21, Δt:Δt:tf, covariances_high, label = L"10\cdot\mathbf{u}_{opt}")
 lines!(ax21, Δt:Δt:tf, covariances_low, label = L"1/10\cdot\mathbf{u}_{opt}")
 Legend(g21[0,1],[ax21],orientation = :horizontal,tellwidth=false, tellheight=true, padding = (0, 0, 0, 0))
 ax22 = Axis(g22[1,1], xlabel=L"\log(u_x/u_{x0})", ylabel=L"\log(u_y/u_{y0})")
 hm=heatmap!(ax22, exprange, exprange, log10.(vals_pred))
-cb=Colorbar(g22[1,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\mathbf{x}}(t_f)\right) \; [\log_{10}]", tellwidth=true, alignmode=Mixed(right=0))
+cb=Colorbar(g22[1,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\left<\mathbf{x}(t_f)\right>\right) \; [\log_{10}]", tellwidth=true, alignmode=Mixed(right=0))
 #colsize!(fig2.layout, 2, Auto(0.2))
 save("Graphics/mega_fig.png", fig)
 fig

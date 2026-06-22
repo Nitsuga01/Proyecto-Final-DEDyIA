@@ -4,12 +4,14 @@ Lugar donde hacer pruebas de los solvers numéricos para chequear que todo funci
 
 include("optical_trap_SDE_methods.jl")
 
+## Preliminares
+
 function gen_dataset(N,model,params)
     dataset=[]
     for _ in 1:N
         obs_trace = simulate(model, params)
         _, tr_obs_positions = get_retval(obs_trace)
-        tr_obs_mat = SArray{Tuple{size(obs_positions)...},typeof(obs_positions[1])}(tr_obs_positions...)
+        tr_obs_mat = SArray{Tuple{size(tr_obs_positions)...},typeof(tr_obs_positions[1])}(tr_obs_positions...)
         tr_obs_vec = eachrow(tr_obs_mat)
         push!(dataset,tr_obs_vec)
     end
@@ -75,39 +77,52 @@ p_alt2(exponent)=[vx,vy,errx*10^exponent,erry]
 p_test(params) = begin l=loss(params,0)
     return -mean(l),std(l)
 end
-exprange=-3:0.1:3
 
-l1=[p_test(p_alt1(e)) for e in exprange]
-l2=[p_test(p_alt2(e)) for e in exprange]
+exprange1=-2:0.1:2
+l1=[p_test(p_alt1(e)) for e in exprange1]
+exprange2=-1:0.1:3
+l2=[p_test(p_alt2(e)) for e in exprange2]
 
 ## Gráfico de esta cosa.
 
-fig1=Figure(figsize=(600,600))
-Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
+fig1=Figure(size=(800,400))
+#Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
 Label(fig1[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
-ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v\sim v_0\cdot 10^e")
-ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\bar{\bar{G}}_{\mathbf q}\sim \bar{\bar{G}}_{\mathbf q 0}\cdot 10^e")
-lines!(ax11, exprange, [l[1] for l in l1])
-errorbars!(ax11, exprange, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
-lines!(ax12, exprange, [l[1] for l in l2])
-errorbars!(ax12, exprange, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
+ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v_x\sim v_{x0}\cdot 10^e")
+ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\epsilon_x\sim \epsilon_{x0}\cdot 10^e")
+lines!(ax11, exprange1, [l[1] for l in l1])
+errorbars!(ax11, exprange1, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
+lines!(ax12, exprange2, [l[1] for l in l2])
+errorbars!(ax12, exprange2, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
 #hidexdecorations!(ax11, ticks = false, grid = false)
 hideydecorations!(ax11)
 hideydecorations!(ax12)
-fig1
+Label(fig1[1, 1, TopLeft()], "a)",
+        fontsize = 20,
+        font = :bold,
+        padding = (0, 5, 5, 0),
+        halign = :right)
+Label(fig1[1, 2, TopLeft()], "b)",
+        fontsize = 20,
+        font = :bold,
+        padding = (0, 5, 5, 0),
+        halign = :right)
+
 save("Graphics/param_inference.png", fig1)
+fig1
+
 
 ## Repito con otros parámetros para el ruido del momento estimado.
 
-errx_alt = 1e-9*1e3
-erry_alt = 1e-9*1e3
+errx_alt = 1e-9*1e2
+erry_alt = 1e-9*1e2
 
 ## Genero un dataset
 
 N=1000
 dataset = []
 for _ in 1:N
-    obs_trace = simulate(model, (tpoints, (ux,uy,vx,vy,errx_alt,erry_alt,σ), solver_params))
+    obs_trace = simulate(model, (tpoints, SA[ux,uy,vx,vy,errx_alt,erry_alt,σ], solver_params))
     tr_state_vec, tr_obs_positions = get_retval(obs_trace)
     tr_obs_vec = [tr_obs_positions[k,:] for k in 1:size(tr_obs_positions)[1]]
     push!(dataset,tr_obs_vec)
@@ -146,24 +161,36 @@ p_alt2(exponent)=[vx,vy,errx*10^exponent,erry]
 p_test(params) = begin l=loss(params,0)
     return -mean(l),std(l)
 end
-exprange=-4:0.1:1
 
-l1=[p_test(p_alt1(e)) for e in exprange]
-l2=[p_test(p_alt2(e)) for e in exprange]
+exprange1=-2:0.1:2
+l1_noisy=[p_test(p_alt1(e)) for e in exprange1]
+exprange2=-3:0.1:1
+l2_noisy=[p_test(p_alt2(e)) for e in exprange2]
 
 ## Gráfico de esta cosa.
 
 fig1=Figure(figsize=(600,600))
-Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
+#Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
 Label(fig1[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
-ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v\sim v_0\cdot 10^e")
-ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\bar{\bar{G}}_{\mathbf q}\sim \bar{\bar{G}}_{\mathbf q 0}\cdot 10^e")
-lines!(ax11, exprange, [l[1] for l in l1])
-errorbars!(ax11, exprange, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
-lines!(ax12, exprange, [l[1] for l in l2])
-errorbars!(ax12, exprange, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
+ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v_x\tilde \sim v_{x0}\cdot 10^e")
+ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\epsilon_x\sim \tilde \epsilon_{x0}\cdot 10^e")
+lines!(ax11, exprange1, [l[1] for l in l1_noisy])
+errorbars!(ax11, exprange1, [l[1] for l in l1_noisy], [l[2]/sqrt(N) for l in l1_noisy])
+lines!(ax12, exprange2, [l[1] for l in l2_noisy])
+errorbars!(ax12, exprange2, [l[1] for l in l2_noisy], [l[2]/sqrt(N) for l in l2_noisy])
 #hidexdecorations!(ax11, ticks = false, grid = false)
 hideydecorations!(ax11)
 hideydecorations!(ax12)
-fig1
+Label(fig1[1, 1, TopLeft()], "a)",
+        fontsize = 20,
+        font = :bold,
+        padding = (0, 5, 5, 0),
+        halign = :right)
+Label(fig1[1, 2, TopLeft()], "b)",
+        fontsize = 20,
+        font = :bold,
+        padding = (0, 5, 5, 0),
+        halign = :right)
 save("Graphics/param_inference_noisy.png", fig1)
+save("Graphics/param_inference_noisy.pdf", fig1)
+fig1
