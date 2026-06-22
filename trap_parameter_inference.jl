@@ -74,14 +74,45 @@ print("Para N=$N. La loss media con parámetros óptimos: $m_opt ± $std_opt, co
 p_alt1(exponent)=[vx*10^exponent,vy,errx,erry]
 p_alt2(exponent)=[vx,vy,errx*10^exponent,erry]
 
-p_test(params) = begin l=loss(params,0)
-    return -mean(l),std(l)
+function param_test_many_trajectories(params,M=10000)
+    ll=loss(params,0)
+    llmax = maximum(ll)
+    pvec = ℯ.^(ll.-llmax)
+
+    meanlikelyhood_scales = sum(pvec)
+
+    meanlikelyhood_std = std(sum(rand(pvec,(length(pvec),M)),dims=1))
+
+    return meanlikelyhood_scales,meanlikelyhood_std,lmax
 end
 
+function param_range_test_many_trajectories(params_vec)
+    test_matrix = Array{Float64,2}(undef,length(params_vec),3)
+    for j in eachindex(params_vec)
+        test_matrix[j,:] .= param_test(params_vec[j])
+    end
+
+    lmax = maximum(test_matrix[:,3])
+    test_matrix[:,1:2] .*= ℯ.^(test_matrix[:,3].-lmax)
+    test_matrix[:,3] .-= lmax
+
+    return test_matrix, lmax
+end
+
+function param_test(params)
+    ll=loss(params,0)
+    return -mean(ll),std(ll)
+end
+
+sol_test = param_range_test([p_alt1(e) for e in -1:0.5:1])
+llike_means = -log.(sol_test[1][:,1]).-sol_test[1][:,3]
+llike_errs = sol_test[1][:,2]./sol_test[1][:,1]
+
+
 exprange1=-2:0.1:2
-l1=[p_test(p_alt1(e)) for e in exprange1]
+l1=[param_test(p_alt1(e)) for e in exprange1]
 exprange2=-1:0.1:3
-l2=[p_test(p_alt2(e)) for e in exprange2]
+l2=[param_test(p_alt2(e)) for e in exprange2]
 
 ## Gráfico de esta cosa.
 
