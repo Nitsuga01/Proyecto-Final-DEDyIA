@@ -1,3 +1,7 @@
+"
+Lugar donde hacer pruebas de los solvers numéricos para chequear que todo funciona correctamente.
+"
+
 include("optical_trap_SDE_methods.jl")
 
 # parámetros
@@ -5,7 +9,7 @@ include("optical_trap_SDE_methods.jl")
 model = SDEObs
 solver_params = (; nssteps=4)#, ode_xo = zeros(10), sde_xo=zeros(6))
 
-to,tf,Δt = 0.0,50.0,0.05
+to,tf,Δt = 0.0,500.0,0.05
 tpoints = to:Δt:tf
 
 ux = -0.1
@@ -74,7 +78,7 @@ println()
 
 println()
 
-println("En cuanto a la fuerza, asumiendo que el valor medio de la posición y el momento es nulo (subestimando entonces), pero usando los máximos de la varianza para calcular los valores rms:")
+println("En cuanto a la fuerza, asumiendo que el valor medio de la posición y el momento es nulo (subestimando entonces), pero usando los máximos de la dispersión:")
 x_maxes = sqrt.(maximum_values[[1,3,8,10]])
 println("Los valores típicos, basados únicamente en la dispersión serán del orden $(round.(x_maxes,sigdigits=2))")
 f = zeros(6)
@@ -100,8 +104,10 @@ println("Teniendo en cuenta un stepsize de $Δt, esto es fluctuaciones de orden 
 println()
 
 println("Las partes de la dinámica que dependen fluctuaciones en los parámetros son la fuerza armónica y de feedback")
-println("En este caso, su jacobiano, escalado por un stepsize de $Δt es el siguiente:")
+println("En este caso, su sensitividad en un $Δt está dada por la siguiente matriz:")
 mats = [sde_drift_jacobian(zeros(6),[],feedback_params,i,to,Δt) for i in eachindex(t_estim)]
 sens_max = [maximum([abs(mats[j][i,k]) for j in eachindex(t_estim)]) for i in 1:6, k in 1:6]
 show(stdout,"text/plain",round.(sens_max.*Δt,sigdigits=2))
 println()
+
+println("----------------------------------------------------------------------------------")

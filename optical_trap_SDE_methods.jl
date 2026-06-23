@@ -4,7 +4,6 @@ y cualquier otra cosa sobre la trampa.
 """
 ## Imports y Usings
 
-import BenchmarkTools: @btime, @benchmark
 import DifferentialEquations: init, MatrixOperator, ODEProblem, solve
 import Distributions: Dirichlet, MvNormal
 import Gen: choicemap, @gen, get_retval, log_ml_estimate, mvnormal, NoChange, sample_unweighted_traces, select, simulate
@@ -14,10 +13,13 @@ import LowLevelParticleFilters: covariance, forward_trajectory, ExtendedKalmanFi
 import Optimization: AutoForwardDiff, OptimizationFunction, OptimizationProblem, solve
 import SeeToDee: Rk4
 import StaticArrays: SA, SArray
-import Statistics: cov, mean, std
+import Statistics: mean, std
 
-using OptimizationOptimJL, OptimizationNLopt
+using LaTeXStrings
 using CairoMakie
+using OptimizationOptimJL, OptimizationNLopt
+using StaticArrays
+set_theme!(theme_latexfonts(),fontsize = 20)
 
 ## Constantes y parámetros de la trampa, la partícula, el feedback, la naturaleza y lo que sea obtenidos del paper
 

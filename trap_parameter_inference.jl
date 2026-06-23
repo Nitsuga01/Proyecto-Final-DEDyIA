@@ -79,46 +79,30 @@ function param_test_many_trajectories(params,M=10000)
     llmax = maximum(ll)
     pvec = ℯ.^(ll.-llmax)
 
-    meanlikelyhood_scales = sum(pvec)
+    mll_shift = sum(pvec)
 
-    meanlikelyhood_std = std(sum(rand(pvec,(length(pvec),M)),dims=1))
+    mll_bootstrap = sum(rand(pvec,(length(pvec),M)),dims=1)
 
-    return meanlikelyhood_scales,meanlikelyhood_std,lmax
+    # - log de la likelyhood media
+    loss_val = -log(mll_shift) -llmax
+
+    # - log de la likelyhood resampleada para bootstrapear el error.
+    loss_bootstrap = -llmax .- log.(mll_bootstrap)
+
+    loss_std=std(loss_bootstrap)
+    return loss_val, loss_std
 end
-
-function param_range_test_many_trajectories(params_vec)
-    test_matrix = Array{Float64,2}(undef,length(params_vec),3)
-    for j in eachindex(params_vec)
-        test_matrix[j,:] .= param_test(params_vec[j])
-    end
-
-    lmax = maximum(test_matrix[:,3])
-    test_matrix[:,1:2] .*= ℯ.^(test_matrix[:,3].-lmax)
-    test_matrix[:,3] .-= lmax
-
-    return test_matrix, lmax
-end
-
-function param_test(params)
-    ll=loss(params,0)
-    return -mean(ll),std(ll)
-end
-
-sol_test = param_range_test([p_alt1(e) for e in -1:0.5:1])
-llike_means = -log.(sol_test[1][:,1]).-sol_test[1][:,3]
-llike_errs = sol_test[1][:,2]./sol_test[1][:,1]
-
 
 exprange1=-2:0.1:2
-l1=[param_test(p_alt1(e)) for e in exprange1]
+l1=[param_test_many_trajectories(p_alt1(e)) for e in exprange1]
 exprange2=-1:0.1:3
-l2=[param_test(p_alt2(e)) for e in exprange2]
+l2=[param_test_many_trajectories(p_alt2(e)) for e in exprange2]
 
 ## Gráfico de esta cosa.
 
 fig1=Figure(size=(800,400))
 #Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
-Label(fig1[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
+Label(fig1[1, 0], L"-\left<\log(L\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
 ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v_x\sim v_{x0}\cdot 10^e")
 ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\epsilon_x\sim \epsilon_{x0}\cdot 10^e")
 lines!(ax11, exprange1, [l[1] for l in l1])
@@ -139,7 +123,7 @@ Label(fig1[1, 2, TopLeft()], "b)",
         padding = (0, 5, 5, 0),
         halign = :right)
 
-save("Graphics/param_inference.png", fig1)
+save("Graphics/param_inference.pdf", fig1)
 fig1
 
 
@@ -202,7 +186,7 @@ l2_noisy=[p_test(p_alt2(e)) for e in exprange2]
 
 fig1=Figure(figsize=(600,600))
 #Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
-Label(fig1[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
+Label(fig1[1, 0], L"-\left<\log(L\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
 ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v_x\tilde \sim v_{x0}\cdot 10^e")
 ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\epsilon_x\sim \tilde \epsilon_{x0}\cdot 10^e")
 lines!(ax11, exprange1, [l[1] for l in l1_noisy])
