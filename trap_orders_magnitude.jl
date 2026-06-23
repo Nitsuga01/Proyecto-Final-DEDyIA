@@ -18,7 +18,7 @@ vx = 0.1
 vy = 0.1
 errx = 1e-9
 erry = 1e-9
-σ = 0.05
+σ = 0.005
 feedback_params=SArray{Tuple{7},Float64}(ux,uy,vx,vy,errx,erry,σ)
 
 ode_abstol = 1e-10

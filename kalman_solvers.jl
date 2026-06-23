@@ -61,12 +61,12 @@ function sde_noise_matrix(u,input,p,t,second_moments)
     ax = sqrt(2 * Λx * ηx)
     ay = sqrt(2 * Λy * ηy)
 
-    G=SA[ax * C_xx  ay * C_xy  0      ;
-         ax * C_xy  ay * C_yy  0      ;
-         ax * C_xpx ay * C_ypx 0      ;
-         ax * C_xpy ay * C_ypy 0      ;
-         0          0          vx*errx;
-         0          0          vy*erry]
+    G=SA[ax * C_xx  ay * C_xy  0   ;
+         ax * C_xy  ay * C_yy  0   ;
+         ax * C_xpx ay * C_ypx 0   ;
+         ax * C_xpy ay * C_ypy 0   ;
+         0          0          errx;
+         0          0          erry]
     
     Q = 1/2 .* G*G'
     

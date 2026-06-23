@@ -33,7 +33,7 @@ vx = 0.1
 vy = 0.1
 errx = 1e-9
 erry = 1e-9
-σ = 0.05
+σ = 0.005
 feedback_params=SArray{Tuple{7},Float64}(ux,uy,vx,vy,errx,erry,σ)
 
 ode_abstol = 1e-10
@@ -89,11 +89,11 @@ end
 ## Genero dataset con los parametros óptimos.
 
 function gen_dataset(N,model,params)
-    dataset=Array{Float64,2}(undef,N,2)
+    dataset=Array{Float64,3}(undef,N,length(params[1]),2)
     for i in 1:N
         obs_trace = simulate(model, params)
         state_vec, _ = get_retval(obs_trace)
-        dataset[i,:].=state_vec[end,1:2]
+        dataset[i,:,:].=state_vec[:,1:2]
     end
     dataset
 end
@@ -102,25 +102,27 @@ dataset = gen_dataset(1000, SDEObs, (tpoints, p_uopt, solver_params))
 dataset_high = gen_dataset(1000, SDEObs, (tpoints, p_uhigh, solver_params))
 dataset_low = gen_dataset(1000, SDEObs, (tpoints, p_ulow, solver_params))
 
+##
+
 posmed = mean(dataset, dims=1)
-posvar = cov(dataset, dims=1)
-losstrue = tr(posvar)
+posvar = [cov(dataset[:,k,:], dims=1) for k in eachindex(tpoints)]
+losstrue = tr.(posvar)
 
 posmed_high = mean(dataset_high, dims=1)
-posvar_high = cov(dataset_high, dims=1)
-losstrue_high = tr(posvar_high)
+posvar_high = [cov(dataset_high[:,k,:], dims=1) for k in eachindex(tpoints)]
+losstrue_high = tr.(posvar_high)
 
 posmed_low = mean(dataset_low, dims=1)
-posvar_low = cov(dataset_low, dims=1)
-losstrue_low = tr(posvar_low)
+posvar_low = [cov(dataset_low[:,k,:], dims=1) for k in eachindex(tpoints)]
+losstrue_low = tr.(posvar_low)
 
 lossopt = loss(u_opt,0)
 losshigh = loss(10.0*u_opt,0)
 losslow = loss(u_opt/10,0)
 
-println("La suma de varianzas predicha por el optimizador: $lossopt. La suma de varianzas real: $losstrue")
-println("La suma de varianzas predicha por el optimizador: $losshigh. La suma de varianzas real: $losstrue_high")
-println("La suma de varianzas predicha por el optimizador: $losslow. La suma de varianzas real: $losstrue_low")
+println("La suma de varianzas predicha por el optimizador: $lossopt. La suma de varianzas real: $(losstrue[end])")
+println("La suma de varianzas predicha por el optimizador: $losshigh. La suma de varianzas real: $(losstrue_high[end])")
+println("La suma de varianzas predicha por el optimizador: $losslow. La suma de varianzas real: $(losstrue_low[end])")
 
 
 #@gen function particle_loss(N,model,params)
@@ -131,9 +133,9 @@ println("La suma de varianzas predicha por el optimizador: $losslow. La suma de 
 
 ##
 
-fig=Figure(size=(800,400))
+#fig=Figure(size=(800,400))
 #gl=fig[1,1]
-gr=fig[1,2]
+#gr=fig[1,2]
 
 #=
 #Label(gl[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
@@ -152,16 +154,34 @@ hideydecorations!(ax11)
 hideydecorations!(ax12)
 =#
 
-g21 = gr[1,1]
-g22 = gr[2,1]
-ax21 = Axis(g21[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(\bar{\bar{C}}_{\left<\mathbf{x}\right>}(t)\right)", yscale=log10)
-lines!(ax21, Δt:Δt:tf, covariances_opt, label = L"\mathbf{u}_{opt}")
-lines!(ax21, Δt:Δt:tf, covariances_high, label = L"10\cdot\mathbf{u}_{opt}")
-lines!(ax21, Δt:Δt:tf, covariances_low, label = L"1/10\cdot\mathbf{u}_{opt}")
-Legend(g21[0,1],[ax21],orientation = :horizontal,tellwidth=false, tellheight=true, padding = (0, 0, 0, 0))
+fig=Figure(size=(1000,500))
+
+g21 = fig[1,1]
+g22 = fig[1,2]
+ax21 = Axis(g21[1,1], xlabel="Time [us]", ylabel=L"\text{tr}\left(C_{\left\langle\vec{x}\right\rangle(t)}\right)", yscale=log10)
+l1=lines!(ax21, Δt:Δt:tf, covariances_opt,label=L"\vec{u}_{0}",color=Cycled(1))
+l2=lines!(ax21, Δt:Δt:tf, covariances_high,label=L"10\cdot\vec{u}_{0}",color=Cycled(2))
+l3=lines!(ax21, Δt:Δt:tf, covariances_low,label=L"1/10\cdot\vec{u}_{0}",color=Cycled(3))
+l4=lines!(ax21, tpoints, losstrue,label=L"\vec{u}_{0}",color=Cycled(1),linestyle=:dash)
+l5=lines!(ax21, tpoints, losstrue_high,label=L"10\cdot\vec{u}_{0}",color=Cycled(2),linestyle=:dash)
+l6=lines!(ax21, tpoints, losstrue_low,label=L"1/10\cdot\vec{u}_{0}",color=Cycled(3),linestyle=:dash)
+
+labels = [L"\vec{u}_{0}",L"\vec{u}_{0}",L"10\cdot\vec{u}_{0}",L"10\cdot\vec{u}_{0}",L"1/10\cdot\vec{u}_{0}",L"1/10\cdot\vec{u}_{0}"]
+Legend(g21[0,1],[ax21], orientation = :horizontal,tellwidth=false, tellheight=true, padding = (0, 0, 0, 0), nbanks=1, merge=true)
+#Legend(g21[0,1],[l1,l4,l2,l5,l3,l6], labels,orientation = :horizontal,tellwidth=false, tellheight=true, padding = (0, 0, 0, 0), nbanks=2, merge=true)
 ax22 = Axis(g22[1,1], xlabel=L"\log(u_x/u_{x0})", ylabel=L"\log(u_y/u_{y0})")
 hm=heatmap!(ax22, exprange, exprange, log10.(vals_pred))
-cb=Colorbar(g22[1,2],hm,label=L"\text{tr}\left(\bar{\bar{C}}_{\left<\mathbf{x}(t_f)\right>\right) \; [\log_{10}]", tellwidth=true, alignmode=Mixed(right=0))
+cb=Colorbar(g22[1,2],hm,label=L"\text{tr}\left(C_{\left\langle\vec{x}(t_f)\right\rangle}\right) \; [\log_{10}]", tellwidth=true, alignmode=Mixed(right=0))
+Label(fig[1, 1, TopLeft()], "a)",
+        fontsize = 20,
+        font = :bold,
+        padding = (0, 5, 5, 0),
+        halign = :right)
+Label(fig[1, 2, TopLeft()], "b)",
+        fontsize = 20,
+        font = :bold,
+        padding = (0, 5, 5, 0),
+        halign = :right)
 #colsize!(fig2.layout, 2, Auto(0.2))
-save("Graphics/mega_fig.png", fig)
+save("Graphics/param_optimization.pdf", fig)
 fig

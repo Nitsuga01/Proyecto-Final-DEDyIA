@@ -32,7 +32,7 @@ vx = 0.1
 vy = 0.1
 errx = 1e-9
 erry = 1e-9
-σ = 0.05
+σ = 0.005
 feedback_params=SArray{Tuple{7},Float64}(ux,uy,vx,vy,errx,erry,σ)
 
 ode_abstol = 1e-10
@@ -102,13 +102,13 @@ l2=[param_test_many_trajectories(p_alt2(e)) for e in exprange2]
 
 fig1=Figure(size=(800,400))
 #Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
-Label(fig1[1, 0], L"-\left<\log(L\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
-ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v_x\sim v_{x0}\cdot 10^e")
-ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\epsilon_x\sim \epsilon_{x0}\cdot 10^e")
+Label(fig1[1, 0], L"-\log\left(\left\langle L\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N\right)\right\rangle\right)", tellheight=false, rotation = pi/2)
+ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"\tilde{v}_x\sim v_{x}\cdot 10^e")
+ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\tilde{\epsilon}_x\sim \epsilon_{x}\cdot 10^e")
 lines!(ax11, exprange1, [l[1] for l in l1])
-errorbars!(ax11, exprange1, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
+errorbars!(ax11, exprange1, [l[1] for l in l1], [l[2] for l in l1])
 lines!(ax12, exprange2, [l[1] for l in l2])
-errorbars!(ax12, exprange2, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
+errorbars!(ax12, exprange2, [l[1] for l in l2], [l[2] for l in l2])
 #hidexdecorations!(ax11, ticks = false, grid = false)
 hideydecorations!(ax11)
 hideydecorations!(ax12)
@@ -134,7 +134,7 @@ erry_alt = 1e-9*1e2
 
 ## Genero un dataset
 
-N=1000
+N=100
 dataset = []
 for _ in 1:N
     obs_trace = simulate(model, (tpoints, SA[ux,uy,vx,vy,errx_alt,erry_alt,σ], solver_params))
@@ -186,7 +186,7 @@ l2_noisy=[p_test(p_alt2(e)) for e in exprange2]
 
 fig1=Figure(figsize=(600,600))
 #Label(fig1[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
-Label(fig1[1, 0], L"-\left<\log(L\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right>", tellheight=false, rotation = pi/2)
+Label(fig1[1, 0], L"-\log\left(\left\langle L\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^N)\right)\right\rangle\right)", tellheight=false, rotation = pi/2)
 ax11=Axis(fig1[1,1], xlabel = "e", ylabel = "Mean Loss", title=L"v_x\tilde \sim v_{x0}\cdot 10^e")
 ax12=Axis(fig1[1,2], xlabel = "e", ylabel = "Mean Loss", title=L"\epsilon_x\sim \tilde \epsilon_{x0}\cdot 10^e")
 lines!(ax11, exprange1, [l[1] for l in l1_noisy])
