@@ -1,5 +1,5 @@
 "
-Lugar donde hacer pruebas de los solvers numéricos para chequear que todo funciona correctamente.
+Lugar donde generar un gráfico de la evolución de los segundos momentos.
 "
 
 include("optical_trap_SDE_methods.jl")
@@ -32,7 +32,7 @@ sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf
 
 ##
 
-fig = Figure(size=(1000,2000))
+fig = Figure(size=(900,1400))
 Label(fig[0,0:1],"Segundos momentos de la distribución")
 labels = [L"C_{xx}",L"C_{xy}",L"C_{yy}",L"C_{xp_x}",L"C_{xp_y}",L"C_{yp_x}",L"C_{yp_y}",L"C_{p_xp_x}",L"C_{p_xp_y}",L"C_{p_yp_y}"]
 for k in eachindex(ode_xo)

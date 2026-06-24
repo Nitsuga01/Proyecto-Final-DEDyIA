@@ -1,5 +1,5 @@
 """
-    SDEObs(tpoints, sde_xo, ode_xo, feedback_params=(0.0,0.0,0.0,0.0,0.0,0.0), σ=0.0; nsteps=1, ode_abstol=1e-10, ode_reltol=1e-6)
+    SDEObs(tpoints, sde_xo, ode_xo, feedback_params=(0.0,0.0,0.0,0.0,0.0,0.0,0.0); kwargs=(;))
 
 Implementación en Gen de solver numérico / generador de observaciones. El solver numérico toma los parámetros del feedback y medición del sistema
 junto a un estado inicial para los primeros y segundos momentos y un conjunto de puntos en el tiempo en que se quieren datos.
@@ -74,6 +74,7 @@ El sistema se simula y se retornan datos observacionales (agregando error de med
     return state_vec, obs_vec
 end
 
+# función para obtener valores por default de los kwargs de SDEObs, si no fueron dados.
 @gen function default_kwarg_value(k::Symbol,params)
     if k == :sde_xo
         ux,uy,vx,vy,errx,erry,σ = params
@@ -99,51 +100,3 @@ end
         return 1e-6
     end
 end
-
-##
-#=
-"""
-Esta función realiza un particle filter para determinar la loglikelyhood de un set de parametros.
-"""
-@gen function loglike_particle_filter(model, n_particles, obs_vec, tpoints, feedback_params=(0.0,0.0,0.0,0.0,0.0,0.0), σ=0.0, ess_thresh=0.5, solver_params=(; nssteps=1, ode_abstol=1e-10, ode_reltol=1e-6))
-    n_obs = length(tpoints)
-    if :nssteps in keys(solver_params)
-        nssteps = solver_params[:nssteps]
-    else
-        nssteps = default_kwarg_value(:nssteps)
-    end
-
-    @assert n_obs == size(obs_vec)[1]
-
-    # Initialize particle filter with first observation
-    obs_choices = [choicemap((i => :y_obs, obs_vec[i,:])) for i in eachindex(tpoints)]
-
-    state = pf_initialize(model, (tpoints[1:1], feedback_params, σ, solver_params), obs_choices[1], n_particles)
-    
-    # Iterate across timesteps
-    for i=2:n_obs
-
-        # Resample and rejuvenate if the effective sample size is too low
-        if effective_sample_size(state) < ess_thresh * n_particles
-            # Perform residual resampling, pruning low-weight particles
-            pf_resample!(state, :residual)
-            # Perform a rejuvenation move on past choices
-            rejuv_sel = select([k=>Symbol(:SDERandom,j) for j in 1:nssteps for k in i-8:i])
-            
-            if i<3
-                try
-                    push!(rejuv_sel,select([:sde_xo]))
-                catch e
-                    print("hay algún tema con los valores iniciales")
-                    error(e)
-                end
-            end
-
-            pf_rejuvenate!(state, mh, (rejuv_sel,))
-        end
-        # Update filter state with new observation at timestep t
-        pf_update!(state, (tpoints[1:i], feedback_params, σ, solver_params), (NoChange(),), obs_choices[i])
-    end
-    return state
-end
-=#

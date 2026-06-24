@@ -1,9 +1,10 @@
 "
-Lugar donde hacer pruebas de los solvers numéricos para chequear que todo funciona correctamente.
+Lugar para optimizar parámetros del sistema sin involucrar fitteos de trayectorias.
 "
 
 include("optical_trap_SDE_methods.jl")
 
+# función que devuleve una función que fija los parámetros a no ajustar y, dado un set de parámetros, devuelve la cantidad a minimizar
 function final_variance_problem(to, tf, Δt, noopt_params)
     loss(opt_params::Vector{T},_) where T = begin
         p = SArray{Tuple{7},T}(opt_params...,noopt_params...)
@@ -43,7 +44,7 @@ ode_xo = thermal_values(n₀)
 p_start = [ux,uy]
 adtype = AutoForwardDiff()
 
-##
+## Calcula el valor óptimo para minimizar la covarianza y luego el aspecto de la función de costo alrededor suyo.
 
 loss = final_variance_problem(to,tf,Δt,feedback_params[3:end])
 optf = OptimizationFunction(loss,adtype)
@@ -51,10 +52,11 @@ prob = OptimizationProblem(optf, p_start)#, lb = zeros(4), ub=10 .*p)
 sol = solve(prob, Optim.GradientDescent())
 u_opt=sol.u
 
+# barre valores similares de los parámetros y estima la función de costo.
 exprange=-1:0.05:1
 vals_pred = [loss([u_opt[1]*10^e1, u_opt[2]*10^e2],[]) for e1 in exprange, e2 in exprange]
 
-##
+## Calcula la evolución en el tiempo de las fluctuaciones para tres parámetros distintos mediante filtros de Kalman.
 
 p_uopt=SA[u_opt...,feedback_params[3:end]...]
 kf = trap_kalman_filter(to,tf,Δt,p_uopt,d0(p_uopt);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
@@ -86,7 +88,7 @@ for _ in 1:Int(tf/Δt)
     push!(covariances_low,tr(covariance(kf)[1:2,1:2]))
 end
 
-## Genero dataset con los parametros óptimos.
+## Genero dataset de la evolución del estado en el tiempo con distintos parámetros mediante integración directa
 
 function gen_dataset(N,model,params)
     dataset=Array{Float64,3}(undef,N,length(params[1]),2)
@@ -102,7 +104,7 @@ dataset = gen_dataset(1000, SDEObs, (tpoints, p_uopt, solver_params))
 dataset_high = gen_dataset(1000, SDEObs, (tpoints, p_uhigh, solver_params))
 dataset_low = gen_dataset(1000, SDEObs, (tpoints, p_ulow, solver_params))
 
-##
+## Analiza el dataset para obtener los valores de fluctuación para cada tiempo obtenidos por integración numérica de las ecuaciones.
 
 posmed = mean(dataset, dims=1)
 posvar = [cov(dataset[:,k,:], dims=1) for k in eachindex(tpoints)]
@@ -125,34 +127,7 @@ println("La suma de varianzas predicha por el optimizador: $losshigh. La suma de
 println("La suma de varianzas predicha por el optimizador: $losslow. La suma de varianzas real: $(losstrue_low[end])")
 
 
-#@gen function particle_loss(N,model,params)
-    
-
-#end
-
-
-##
-
-#fig=Figure(size=(800,400))
-#gl=fig[1,1]
-#gr=fig[1,2]
-
-#=
-#Label(gl[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
-Label(gl[1, 0], L"-\left<\log(\mathcal{L}\left(\mathbf{\theta}|\{\mathbf{x}^{OBS}_{i,t_o:t_f}\}_{i=1}^{%$N})\right)\right>", tellheight=false, rotation = pi/2)
-Label(gl[0, 1], L"v\sim v_0\cdot 10^e", tellheight=true, tellwidth=false)
-Label(gl[0, 2], L"\bar{\bar{G}}_{\mathbf q}\sim \bar{\bar{G}}_{\mathbf q 0}\cdot 10^e", tellheight=true, tellwidth=false)
-ax11=Axis(gl[1,1], xlabel = "e", ylabel = "Mean Loss")
-#Label(gl[0, 0:2], L"Modelado inverso basado en $N=1000$ trayectorias", tellheight=true, tellwidth=false)
-ax12=Axis(gl[1,2], xlabel = "e", ylabel = "Mean Loss")
-lines!(ax11, exprange, [l[1] for l in l1])
-errorbars!(ax11, exprange, [l[1] for l in l1], [l[2]/sqrt(N) for l in l1])
-lines!(ax12, exprange, [l[1] for l in l2])
-errorbars!(ax12, exprange, [l[1] for l in l2], [l[2]/sqrt(N) for l in l2])
-#hidexdecorations!(ax11, ticks = false, grid = false)
-hideydecorations!(ax11)
-hideydecorations!(ax12)
-=#
+## Grafica las cosas
 
 fig=Figure(size=(1000,500))
 

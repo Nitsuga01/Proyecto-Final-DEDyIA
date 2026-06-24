@@ -1,3 +1,7 @@
+"""
+Lugar para fittear trayectorias utilizando filtros de Kalman para ver que onda.
+"""
+
 include("optical_trap_SDE_methods.jl")
 
 ## parámetros
@@ -24,13 +28,14 @@ ode_xo = thermal_values(n₀)
 ## Para analizar las trayectorias y el comportamiento del sistema en función de los parámetros
 # y para comprobar que el modelo puede ajustarlo relativamente bien.
 
+# Genero una trayectoria
 obs_trace = simulate(model, (tpoints, feedback_params, solver_params))
 state_vec, obs_positions = get_retval(obs_trace)
 obs_mat = SArray{Tuple{size(obs_positions)...},typeof(obs_positions[1])}(obs_positions...)
 obs_vec = eachrow(obs_mat)
 
-# preparo la distribución inicial
 
+# Ajusto la trayectoria con un filtro de kalman y extraigo el vector de estados inferido.
 kf = trap_kalman_filter(to,tf,Δt,feedback_params,d0(feedback_params,true,obs_vec[1]);ode_abstol=1e-10,ode_reltol=1e-6,supersample=1)
 sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
 inf_vec=reinterpret(reshape, typeof(obs_positions[1]), sol.x)'

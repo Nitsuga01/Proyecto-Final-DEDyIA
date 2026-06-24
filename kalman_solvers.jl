@@ -1,4 +1,4 @@
-## Numerics
+## Funciones necesarias para la solución de las ecuaciones diferenciales. Como las necesito en un formato distinto al de DifferentialEquations o el que usé en Gen.
 
 function sde_drift_jacobian(u,input,p,i,t0,Δt)
     # tiempo
@@ -72,6 +72,8 @@ function sde_noise_matrix(u,input,p,t,second_moments)
     
 end
 
+## Función que genera un filtro de Kalman precargado con las ecuaciones dinámicas de la trampa.
+
 function trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
     prob_ode = ODEProblem(ode_drift!, ode_xo, (to,tf))
     sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf)
@@ -89,44 +91,7 @@ function trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=thermal_values(n
     kf=ExtendedKalmanFilter(discrete_dynamics, measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
 end
 
-function inverse_trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
-    prob_ode = ODEProblem(ode_drift!, ode_xo, (to,tf))
-    sol_ode = solve(prob_ode, abstol=ode_abstol, reltol=ode_reltol, saveat=to:Δt:tf)
-    
-    # Matriz que da ruido de proceso al estado
-    R1 = (u,input,p,i) -> sde_noise_matrix(u,input,p,i,sol_ode[end-(i+1)]).*Δt
-    # Matriz de covarianza para el ruido de medición sobre el estado
-    R2 = SA[feedback_params[7]^2 0.0; 0.0 feedback_params[7]^2]
-
-    # Evolución
-    continuous_dynamics = (u,input,p,i)-> -sde_drift(u,input,p,i,to,Δt)
-    discrete_dynamics = Rk4(continuous_dynamics,Δt;supersample=supersample)
-    measurement = (u,input,p,i)->SA[u[1],u[2]]
-
-    kf=ExtendedKalmanFilter(discrete_dynamics,  measurement, R1, R2, d0; p = feedback_params, α = 1.0, check = true, nu=0, nx=6, ny=2, Ts=1)
-end
-
-function fit_trayectory(to,tf,Δt,feedback_params,d0;iterations=1,ode_xo=thermal_values(n₀),ode_abstol=1e-10,ode_reltol=1e-6, supersample=1)
-
-    kf = trap_kalman_filter(to,tf,Δt,feedback_params,d0;ode_xo=ode_xo,ode_abstol=ode_abstol,ode_reltol=ode_reltol,supersample=supersample)
-    sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
-
-    for i in 2:iterations
-        direct = iterations%2==1
-        if direct
-            mv = MvNormal(sol.x[end],sol.R[end])
-            kf = trap_kalman_filter(to,tf,Δt,feedback_params,mv;ode_abstol=ode_abstol,ode_reltol=ode_reltol,supersample=supersample)
-            sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec,kf.p)
-        else
-            mv = MvNormal(sol.x[end],sol.R[end])
-            kf = inverse_trap_kalman_filter(to,tf,Δt,feedback_params,mv;ode_abstol=ode_abstol,ode_reltol=ode_reltol,supersample=supersample)
-            sol = forward_trajectory(kf,fill([],length(obs_vec)),obs_vec[end:-1:1],kf.p)
-        end
-    end
-    
-    return sol
-end
-
+# Función que calcula los parámetros de la gaussiana no normalizada obenida al multiplicar dos gaussianas multivariadas. útil para bayes.
 function gaussian_product(mu1, sigma1, mu2, sigma2)
     inv1 = inv(sigma1)
     inv2 = inv(sigma2)
@@ -136,6 +101,9 @@ function gaussian_product(mu1, sigma1, mu2, sigma2)
     return mu, sigma
 end
 
+# Función que calcula el prior del sistema estocástico. Obs que son los valores térmicos de la covarianza salvo por
+# el momento estimado, que estará en la misma posición que el momento real a menos de un error que va como el 
+# error estacionario de su proceso de aproximación.
 function d0(params=SArray{Tuple{7},Float64}(0.0,0.0,0.0,0.0,0.0,0.0,0.0),datapoint=false,y=SArray{Tuple{2},Float64}(0.0,0.0))
     # psrepara la distribución de estados iniciales
     type = typeof(params[1])
@@ -161,7 +129,7 @@ function d0(params=SArray{Tuple{7},Float64}(0.0,0.0,0.0,0.0,0.0,0.0,0.0),datapoi
     MvNormal(SArray{Tuple{6},type}(mu...,zeros(4)...),SArray{Tuple{6,6},type}(C1...))
 end
 
-## Inference
+## Calcula los valroes de loglikelyhood para un set de parámetros y cada trayectoria de un set de trayectorias. 
 
 function loglik_dataset(dataset,filter)
     N=length(dataset)
@@ -188,14 +156,3 @@ function loglik_dataset(dataset,filter)
 
     return ll_vec
 end
-
-loss_function_sum(dataset,filter) = -sum(loglik_dataset(dataset,filter))/length(dataset)
-
-loss_function_entropy(dataset,filter) = begin
-    ll_vec = loglik_dataset(dataset,filter,opt_params)
-    p_vec = exp.(ll_vec.-maximum(ll_vec))
-    s_path = p_vec./sum(p_vec).*ll_vec
-    -sum(s_path)
-end
-
-loss_function_combined(dataset, filter, alpha=0.5) = (1-alpha)*loss_function_sum(dataset,filter)+alpha*loss_function_entropy(dataset,filter)
